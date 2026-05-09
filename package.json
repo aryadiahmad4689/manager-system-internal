@@ -1,0 +1,49 @@
+{
+  "name": "vm-login-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:server": "tsx server.ts",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest --run --coverage",
+    "db:seed": "npx tsx src/lib/db/seed.ts"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.9.0",
+    "cookie": "^1.1.1",
+    "next": "14.2.35",
+    "next-auth": "^4.24.14",
+    "react": "^18",
+    "react-dom": "^18",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "ssh2": "^1.17.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/bcrypt": "^6.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cookie": "^0.6.0",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/ssh2": "^1.15.5",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
+    "fast-check": "^4.7.0",
+    "jsdom": "^29.1.1",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5",
+    "vitest": "^4.1.5"
+  }
+}
