@@ -50,7 +50,7 @@ npm run db:seed
 
 Seed akan membuat:
 - **User admin** — username: `admin`, password: `admin123`
-- **Test VM** — label: `Test VM`, host: `172.18.139.186`, port: `22`, username: `administrator`
+- **Test VM** — sesuai konfigurasi di `src/lib/db/seed.ts`
 
 > Seed aman dijalankan berulang kali. Jika data sudah ada, akan di-skip.
 
@@ -82,7 +82,7 @@ sqlite3 data/dashboard.db
 SELECT id, label, host, username FROM vms;
 
 # Hapus VM berdasarkan host (vm_status akan terhapus otomatis karena ON DELETE CASCADE)
-DELETE FROM vms WHERE host = '172.18.139.186' AND username = 'administrator';
+DELETE FROM vms WHERE host = '<VM_HOST>' AND username = '<VM_USERNAME>';
 
 # Verifikasi
 SELECT * FROM vms;
@@ -104,7 +104,7 @@ db.pragma('foreign_keys = ON');
 // Hapus test VM dari seed
 const result = db.prepare(
   "DELETE FROM vms WHERE host = ? AND username = ?"
-).run('172.18.139.186', 'administrator');
+).run('<VM_HOST>', '<VM_USERNAME>');
 
 console.log(`Deleted ${result.changes} VM(s).`);
 db.close();

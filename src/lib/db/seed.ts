@@ -11,11 +11,11 @@ const DEFAULT_ADMIN = {
 };
 
 const TEST_VM = {
-  label: 'Test VM',
-  host: '172.18.139.186',
-  port: 22,
-  username: 'administrator',
-  password: 'Bre@kthrough2312',
+  label: process.env.VM_LABEL || 'Test VM',
+  host: process.env.VM_HOST || '127.0.0.1',
+  port: parseInt(process.env.VM_PORT || '22'),
+  username: process.env.VM_USERNAME || 'user',
+  password: process.env.VM_PASSWORD || 'changeme',
 };
 
 /**
