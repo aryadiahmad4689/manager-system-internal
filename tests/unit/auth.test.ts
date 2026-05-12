@@ -90,12 +90,12 @@ describe('Auth Configuration', () => {
   });
 
   describe('session configuration', () => {
-    it('should use JWT strategy with 30-min maxAge', async () => {
+    it('should use JWT strategy with 8-hour maxAge', async () => {
       // Import the auth config to verify session settings
       const { authOptions } = await import('@/lib/auth/auth.config');
 
       expect(authOptions.session?.strategy).toBe('jwt');
-      expect(authOptions.session?.maxAge).toBe(1800);
+      expect(authOptions.session?.maxAge).toBe(28800);
     });
 
     it('should configure sign-in page to /login', async () => {

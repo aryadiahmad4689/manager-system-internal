@@ -74,7 +74,7 @@ describe('Database seed', () => {
     await seed(dbPath);
 
     const db = new Database(dbPath);
-    const vm = db.prepare('SELECT * FROM vms WHERE host = ?').get('172.18.139.186') as {
+    const vm = db.prepare('SELECT * FROM vms WHERE host = ?').get('127.0.0.1') as {
       id: string;
       label: string;
       host: string;
@@ -88,16 +88,16 @@ describe('Database seed', () => {
 
     expect(vm).toBeDefined();
     expect(vm.label).toBe('Test VM');
-    expect(vm.host).toBe('172.18.139.186');
+    expect(vm.host).toBe('127.0.0.1');
     expect(vm.port).toBe(22);
-    expect(vm.username).toBe('administrator');
+    expect(vm.username).toBe('user');
     // Verify the encrypted password can be decrypted
     const decrypted = decryptPassword(
       vm.encrypted_password,
       vm.encryption_iv,
       vm.encryption_auth_tag
     );
-    expect(decrypted).toBe('Bre@kthrough2312');
+    expect(decrypted).toBe('changeme');
   });
 
   it('should create vm_status record for test VM', async () => {
@@ -107,7 +107,7 @@ describe('Database seed', () => {
     await seed(dbPath);
 
     const db = new Database(dbPath);
-    const vm = db.prepare('SELECT id FROM vms WHERE host = ?').get('172.18.139.186') as { id: string };
+    const vm = db.prepare('SELECT id FROM vms WHERE host = ?').get('127.0.0.1') as { id: string };
     const status = db.prepare('SELECT * FROM vm_status WHERE vm_id = ?').get(vm.id) as {
       vm_id: string;
       status: string;
@@ -129,7 +129,7 @@ describe('Database seed', () => {
 
     const db = new Database(dbPath);
     const users = db.prepare('SELECT * FROM users WHERE username = ?').all('admin');
-    const vms = db.prepare('SELECT * FROM vms WHERE host = ?').all('172.18.139.186');
+    const vms = db.prepare('SELECT * FROM vms WHERE host = ?').all('127.0.0.1');
     db.close();
 
     expect(users).toHaveLength(1);

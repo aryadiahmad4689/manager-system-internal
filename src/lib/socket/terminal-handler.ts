@@ -166,6 +166,54 @@ export function registerTerminalHandlers(socket: AuthenticatedSocket): void {
     }
   });
 
+  // Handle terminal:check-git — check if current directory is a git repo and return branch
+  // Accepts optional directory from client; if not provided, tries to detect from /proc
+  socket.on('terminal:check-git', async (vmId: string, directory?: string) => {
+    try {
+      const session = activeSessions.get(socket.id);
+      if (!session || session.vmId !== vmId) {
+        socket.emit('terminal:git-info', { isGit: false, branch: null, directory: '' });
+        return;
+      }
+
+      const sshManager = getSSHManager();
+      const marker = `__GITCK_${Date.now()}__`;
+      const endMarker = `__GITCK_END_${Date.now()}__`;
+
+      let cmd: string;
+      if (directory) {
+        // Client provided directory — resolve ~ by not quoting it
+        const escapedDir = directory.startsWith('~')
+          ? directory  // Don't quote ~ paths so shell expands them
+          : `"${directory}"`;
+        cmd = `echo ${marker} && cd ${escapedDir} 2>/dev/null && pwd && git rev-parse --is-inside-work-tree 2>/dev/null && git branch --show-current 2>/dev/null && echo ${endMarker}`;
+      } else {
+        // Try to detect cwd from /proc — find the newest bash/zsh/sh process
+        cmd = `echo ${marker} && SHELL_PID=$(ps aux | grep -E 'bash|zsh|sh' | grep -v grep | grep -v 'ps aux' | awk '{print $2}' | tail -1) && CWD=$(readlink -f /proc/$SHELL_PID/cwd 2>/dev/null) && if [ -d "$CWD" ]; then cd "$CWD" && pwd && git rev-parse --is-inside-work-tree 2>/dev/null && git branch --show-current 2>/dev/null; else echo ""; fi && echo ${endMarker}`;
+      }
+
+      const output = await sshManager.executeCommand(vmId, cmd);
+
+      const startIdx = output.indexOf(marker);
+      const endIdx = output.indexOf(endMarker);
+      const cleanOutput = startIdx >= 0 && endIdx >= 0
+        ? output.substring(startIdx + marker.length, endIdx).trim()
+        : output.trim();
+
+      const lines = cleanOutput.split('\n').filter(l => l.trim().length > 0);
+
+      if (lines.length >= 2 && lines[1] === 'true') {
+        const dir = lines[0];
+        const branch = lines[2] || 'HEAD (detached)';
+        socket.emit('terminal:git-info', { isGit: true, branch, directory: dir });
+      } else {
+        socket.emit('terminal:git-info', { isGit: false, branch: null, directory: lines[0] || '' });
+      }
+    } catch {
+      socket.emit('terminal:git-info', { isGit: false, branch: null, directory: '' });
+    }
+  });
+
   // Handle socket disconnect — clean up any active session
   socket.on('disconnect', () => {
     cleanupSession(socket.id);

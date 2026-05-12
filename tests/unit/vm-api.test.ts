@@ -11,6 +11,7 @@ vi.mock('@/lib/vm/vm-manager', () => ({
   listVMs: vi.fn(),
   addVM: vi.fn(),
   getVMStatus: vi.fn(),
+  checkVMConnectivity: vi.fn(),
 }));
 
 // Mock auth config
@@ -18,8 +19,14 @@ vi.mock('@/lib/auth/auth.config', () => ({
   authOptions: {},
 }));
 
+// Mock the db module
+vi.mock('@/lib/db', () => ({
+  getDb: vi.fn(),
+}));
+
 import { getServerSession } from 'next-auth';
-import { listVMs, addVM, getVMStatus } from '@/lib/vm/vm-manager';
+import { listVMs, addVM, getVMStatus, checkVMConnectivity } from '@/lib/vm/vm-manager';
+import { getDb } from '@/lib/db';
 import { GET, POST } from '@/app/api/vms/route';
 import { GET as GET_STATUS } from '@/app/api/vms/[id]/status/route';
 
@@ -27,6 +34,8 @@ const mockGetServerSession = vi.mocked(getServerSession);
 const mockListVMs = vi.mocked(listVMs);
 const mockAddVM = vi.mocked(addVM);
 const mockGetVMStatus = vi.mocked(getVMStatus);
+const mockCheckVMConnectivity = vi.mocked(checkVMConnectivity);
+const mockGetDb = vi.mocked(getDb);
 
 describe('VM API Routes', () => {
   beforeEach(() => {
@@ -342,12 +351,21 @@ describe('VM API Routes', () => {
 
     it('should return VM status when authenticated', async () => {
       mockGetServerSession.mockResolvedValue({ user: { name: 'admin' } });
-      mockGetVMStatus.mockResolvedValue({
-        vmId: 'abc123def456abc1',
-        status: 'online',
-        lastChecked: new Date('2024-01-01'),
-        failCount: 0,
-      });
+      mockGetDb.mockReturnValue({
+        prepare: vi.fn().mockImplementation((sql: string) => {
+          if (sql.includes('SELECT host, port FROM vms')) {
+            return { get: vi.fn().mockReturnValue({ host: '192.168.1.1', port: 22 }) };
+          }
+          if (sql.includes('SELECT fail_count FROM vm_status')) {
+            return { get: vi.fn().mockReturnValue({ fail_count: 0 }) };
+          }
+          if (sql.includes('INSERT INTO vm_status')) {
+            return { run: vi.fn() };
+          }
+          return { get: vi.fn().mockReturnValue(null), run: vi.fn() };
+        }),
+      } as any);
+      mockCheckVMConnectivity.mockResolvedValue(true);
 
       const response = await GET_STATUS(
         new Request('http://localhost/api/vms/abc123def456abc1/status'),
@@ -362,7 +380,11 @@ describe('VM API Routes', () => {
 
     it('should return 404 when VM is not found', async () => {
       mockGetServerSession.mockResolvedValue({ user: { name: 'admin' } });
-      mockGetVMStatus.mockRejectedValue(new Error('VM status not found for id: nonexistent'));
+      mockGetDb.mockReturnValue({
+        prepare: vi.fn().mockReturnValue({
+          get: vi.fn().mockReturnValue(null),
+        }),
+      } as any);
 
       const response = await GET_STATUS(
         new Request('http://localhost/api/vms/abcdef1234567890/status'),
@@ -389,7 +411,9 @@ describe('VM API Routes', () => {
 
     it('should return 500 for unexpected errors', async () => {
       mockGetServerSession.mockResolvedValue({ user: { name: 'admin' } });
-      mockGetVMStatus.mockRejectedValue(new Error('Database connection lost'));
+      mockGetDb.mockImplementation(() => {
+        throw new Error('Database connection lost');
+      });
 
       const response = await GET_STATUS(
         new Request('http://localhost/api/vms/abcdef1234567890/status'),

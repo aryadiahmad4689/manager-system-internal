@@ -15,11 +15,12 @@ interface TerminalProps {
   isActive: boolean;
   onClose: () => void;
   onError?: (message: string) => void;
+  onGitBranchChange?: (branch: string | null) => void;
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
-export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: TerminalProps) {
+export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, onGitBranchChange }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -34,21 +35,21 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: 
   const [selectedText, setSelectedText] = useState('');
   const [showAIAnalyze, setShowAIAnalyze] = useState(false);
   const [showPrettify, setShowPrettify] = useState(false);
+  const [gitBranch, setGitBranch] = useState<string | null>(null);
+  const [gitDirectory, setGitDirectory] = useState<string>('');
   const lastSelectedTextRef = useRef('');
-  const lastDirRef = useRef('');
+  const lastDirRef = useRef<string>(
+    typeof window !== 'undefined'
+      ? (localStorage.getItem(`terminal-lastdir-${vmId}`) || '')
+      : ''
+  );
+  const gitCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputBufferRef = useRef<string>('');
+  const cwdDetectedRef = useRef<boolean>(false);
 
   const sendCommand = useCallback((command: string) => {
     if (socketRef.current?.connected) {
       socketRef.current.emit('terminal:input', command + '\n');
-
-      // Track cd commands — only absolute paths are reliable
-      const trimmed = command.trim();
-      if (trimmed.startsWith('cd ')) {
-        const dir = trimmed.slice(3).trim().replace(/["']/g, '');
-        if (dir.startsWith('/')) {
-          lastDirRef.current = dir;
-        }
-      }
     }
   }, []);
 
@@ -59,12 +60,22 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: 
     }
   }, [vmId]);
 
+  const checkGitBranch = useCallback((dir?: string) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('terminal:check-git', vmId, dir || undefined);
+    }
+  }, [vmId]);
+
   const toggleSearchBar = useCallback(() => {
     setShowSearchBar(prev => {
       const next = !prev;
-      if (next && dirEntries.length === 0) {
-        // First open — load home directory (where shell starts)
-        setTimeout(() => listDirectory(), 100);
+      if (next && connectionState === 'connected') {
+        // Load directory listing: use cwd if known, otherwise default (home)
+        const cwd = lastDirRef.current || undefined;
+        // Only reload if no entries yet, or if cwd changed from what's displayed
+        if (dirEntries.length === 0 || (cwd && cwd !== currentDir)) {
+          setTimeout(() => listDirectory(cwd), 100);
+        }
       }
       return next;
     });
@@ -77,7 +88,7 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: 
         }
       }
     }, 50);
-  }, [dirEntries.length, listDirectory]);
+  }, [listDirectory, dirEntries.length, currentDir, connectionState]);
   const connect = useCallback(() => {
     setConnectionState('connecting');
     setErrorMessage('');
@@ -105,6 +116,34 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: 
       term.onData((data: string) => {
         if (socketRef.current?.connected) {
           socketRef.current.emit('terminal:input', data);
+
+          // Track typed input to detect cd commands
+          if (data === '\r' || data === '\n') {
+            // User pressed Enter — check if they typed a cd command
+            const typed = inputBufferRef.current.trim();
+            if (typed.startsWith('cd ')) {
+              const dir = typed.slice(3).trim().replace(/["']/g, '');
+              if (dir && dir !== '-') {
+                // Re-check git branch after cd
+                if (gitCheckTimerRef.current) {
+                  clearTimeout(gitCheckTimerRef.current);
+                }
+                gitCheckTimerRef.current = setTimeout(() => {
+                  socketRef.current?.emit('terminal:check-git', vmId, dir);
+                }, 1000);
+              }
+            }
+            inputBufferRef.current = '';
+          } else if (data === '\x7f' || data === '\b') {
+            // Backspace — remove last char from buffer
+            inputBufferRef.current = inputBufferRef.current.slice(0, -1);
+          } else if (data.length === 1 && data >= ' ') {
+            // Regular printable character
+            inputBufferRef.current += data;
+          } else if (data.length > 1 && !data.startsWith('\x1b')) {
+            // Pasted text
+            inputBufferRef.current += data;
+          }
         }
       });
 
@@ -142,20 +181,30 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: 
 
       socket.emit('terminal:open', vmId, initialSize);
 
-      // After shell is ready, cd to last known directory
-      if (lastDirRef.current) {
-        const savedDir = lastDirRef.current;
-        // Wait for first output (shell prompt ready) then cd
-        const cdHandler = () => {
-          socket.off('terminal:output', cdHandler);
-          setTimeout(() => {
-            socket.emit('terminal:input', `cd ${savedDir}\n`);
-          }, 300);
+      // After shell is ready, cd to last known directory if we have one
+      const savedDir = lastDirRef.current;
+      if (savedDir) {
+        // Wait for the first prompt to appear (indicates shell is ready)
+        // then send cd + clear so the terminal looks clean
+        let prompted = false;
+        const promptHandler = (data: string) => {
+          // Detect prompt: typically ends with $ or # after user@host:path
+          if (!prompted && (data.includes('$') || data.includes('#'))) {
+            prompted = true;
+            socket.off('terminal:output', promptHandler);
+            // Small delay to ensure prompt is fully rendered
+            setTimeout(() => {
+              socket.emit('terminal:input', `cd ${savedDir} && clear\n`);
+            }, 200);
+          }
         };
-        socket.on('terminal:output', cdHandler);
-        // Fallback in case no output comes
+        socket.on('terminal:output', promptHandler);
+        // Fallback: if no prompt detected within 5s, try anyway
         setTimeout(() => {
-          socket.off('terminal:output', cdHandler);
+          if (!prompted) {
+            socket.off('terminal:output', promptHandler);
+            socket.emit('terminal:input', `cd ${savedDir} && clear\n`);
+          }
         }, 5000);
       }
 
@@ -172,11 +221,36 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: 
         }
       };
       setTimeout(sendResize, 1000);
+
+      // Check git branch after shell is ready
+      setTimeout(() => {
+        socket.emit('terminal:check-git', vmId);
+      }, 2000);
+
+      // Auto-load directory listing for file browser after shell is ready
+      setTimeout(() => {
+        const cwd = lastDirRef.current || undefined;
+        socket.emit('terminal:list-logs', vmId, cwd);
+        setLoadingLogs(true);
+      }, 2500);
     });
 
     socket.on('terminal:output', (data: string) => {
       if (xtermRef.current) {
         xtermRef.current.write(data);
+      }
+
+      // Parse prompt to detect current working directory
+      // Common prompt formats: user@host:path$ or user@host:path#
+      // Example: administrator@172:~/AppGolang/vikendi-go$
+      const promptMatch = data.match(/[@\w.-]+:([~\/][^\$#\n\r\x1b]*?)[\$#]\s*$/m);
+      if (promptMatch) {
+        const detectedPath = promptMatch[1].trim();
+        if (detectedPath && detectedPath !== lastDirRef.current) {
+          lastDirRef.current = detectedPath;
+          try { localStorage.setItem(`terminal-lastdir-${vmId}`, detectedPath); } catch {}
+          cwdDetectedRef.current = true;
+        }
       }
     });
 
@@ -214,6 +288,19 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: 
       }
     });
 
+    // Listen for git info response
+    socket.on('terminal:git-info', (data: { isGit: boolean; branch: string | null; directory: string }) => {
+      if (data.isGit && data.branch) {
+        setGitBranch(data.branch);
+        setGitDirectory(data.directory);
+        onGitBranchChange?.(data.branch);
+      } else {
+        setGitBranch(null);
+        setGitDirectory('');
+        onGitBranchChange?.(null);
+      }
+    });
+
     // Forward xterm input to server — only register once during xterm initialization
     // (moved to after xterm creation above to avoid duplicate listeners on reconnect)
   }, [vmId, onError]);
@@ -242,6 +329,10 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: 
     return () => {
       // Cleanup on unmount
       disconnect();
+
+      if (gitCheckTimerRef.current) {
+        clearTimeout(gitCheckTimerRef.current);
+      }
 
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
@@ -315,10 +406,10 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: 
 
   return (
     <div className={`flex flex-col h-full ${isActive ? '' : 'hidden'}`}>
-      {/* Search toolbar */}
+      {/* Search toolbar — always visible */}
       <TerminalSearchBar
         onExecute={sendCommand}
-        visible={showSearchBar}
+        visible={true}
         onToggle={toggleSearchBar}
         dirEntries={dirEntries}
         currentDir={currentDir}
@@ -326,50 +417,46 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError }: 
         onNavigate={listDirectory}
       />
 
-      {/* Terminal toolbar */}
-      <div className="flex items-center justify-end px-2 py-1 bg-gray-800 border-b border-gray-700 gap-1">
-        {/* Buttons that show when text is selected */}
-        {selectedText && (
-          <div className="flex items-center gap-1 mr-auto">
-            <button
-              onClick={() => setShowPrettify(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors bg-green-600 hover:bg-green-700 text-white"
-              title="Format & prettify selected text"
-            >
-              <span className="text-sm">✨</span>
-              Prettify
-            </button>
-            <button
-              onClick={() => setShowAIAnalyze(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors bg-purple-600 hover:bg-purple-700 text-white"
-              title="Analyze selected text with AI"
-            >
-              <span>🤖</span>
-              AI Analyze
-            </button>
-          </div>
-        )}
-        <button
-          onClick={toggleSearchBar}
-          className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-            showSearchBar
-              ? 'bg-blue-600 text-white'
-              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
-          }`}
-          title="Search Commands (Ctrl+Shift+F)"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          Search
-        </button>
-      </div>
+      {/* Terminal toolbar — only show when there's content */}
+      {(selectedText || gitBranch) && (
+        <div className="flex items-center justify-end px-2 py-1 bg-gray-800 border-b border-gray-700 gap-1">
+          {/* Buttons that show when text is selected */}
+          {selectedText && (
+            <div className="flex items-center gap-1 mr-auto">
+              <button
+                onClick={() => setShowPrettify(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors bg-green-600 hover:bg-green-700 text-white"
+                title="Format & prettify selected text"
+              >
+                <span className="text-sm">✨</span>
+                Prettify
+              </button>
+              <button
+                onClick={() => setShowAIAnalyze(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors bg-purple-600 hover:bg-purple-700 text-white"
+                title="Analyze selected text with AI"
+              >
+                <span>🤖</span>
+                AI Analyze
+              </button>
+            </div>
+          )}
+          {gitBranch && (
+            <span className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-orange-400 ${!selectedText ? 'mr-auto' : ''}`} title={`Git: ${gitBranch}`}>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+              {gitBranch}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Terminal container */}
       <div
         ref={terminalRef}
         className="flex-1 bg-black"
-        style={{ minHeight: '200px' }}
+        style={{ minHeight: '300px' }}
       />
 
       {/* Connection state overlays */}

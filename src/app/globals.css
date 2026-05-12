@@ -25,3 +25,29 @@ body {
     text-wrap: balance;
   }
 }
+
+/* CodeMirror selection highlight - ensure selection is always visible */
+.cm-editor .cm-selectionBackground {
+  background-color: #bfdbfe !important; /* blue-200 for light mode */
+}
+
+.cm-editor.cm-focused .cm-selectionBackground {
+  background-color: #93c5fd !important; /* blue-300 for focused state */
+}
+
+.dark .cm-editor .cm-selectionBackground {
+  background-color: #1e40af !important; /* blue-800 for dark mode */
+}
+
+.dark .cm-editor.cm-focused .cm-selectionBackground {
+  background-color: #2563eb !important; /* blue-600 for dark focused */
+}
+
+/* Native selection fallback */
+.cm-editor .cm-content ::selection {
+  background-color: #93c5fd !important;
+}
+
+.dark .cm-editor .cm-content ::selection {
+  background-color: #2563eb !important;
+}

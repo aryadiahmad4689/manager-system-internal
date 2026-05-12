@@ -62,6 +62,32 @@ export function runMigrations(db: Database.Database): void {
   }
 
   db.exec(schema);
+
+  // Migration: make vm_id nullable in database_connections
+  // SQLite doesn't support ALTER COLUMN, so we check and recreate if needed
+  const tableInfo = db.prepare("PRAGMA table_info('database_connections')").all() as Array<{ name: string; notnull: number }>;
+  const vmIdCol = tableInfo.find((col) => col.name === 'vm_id');
+  if (vmIdCol && vmIdCol.notnull === 1) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS database_connections_new (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        vm_id TEXT REFERENCES vms(id) ON DELETE SET NULL,
+        db_type TEXT NOT NULL CHECK(db_type IN ('mysql', 'postgresql', 'mariadb')),
+        host TEXT NOT NULL DEFAULT 'localhost',
+        port INTEGER NOT NULL,
+        db_username TEXT NOT NULL,
+        encrypted_password TEXT NOT NULL,
+        encryption_iv TEXT NOT NULL,
+        encryption_auth_tag TEXT NOT NULL,
+        label TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT OR IGNORE INTO database_connections_new SELECT * FROM database_connections;
+      DROP TABLE database_connections;
+      ALTER TABLE database_connections_new RENAME TO database_connections;
+    `);
+  }
 }
 
 /**

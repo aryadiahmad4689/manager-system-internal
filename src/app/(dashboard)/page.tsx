@@ -64,31 +64,31 @@ function StatusIndicator({ status }: { status: 'online' | 'offline' | 'unreachab
         className={`inline-block w-3 h-3 rounded-full ${colorMap[status]}`}
         aria-label={`Status: ${labelMap[status]}`}
       />
-      <span className="text-sm text-gray-400">{labelMap[status]}</span>
+      <span className="text-sm text-gray-500 dark:text-gray-400">{labelMap[status]}</span>
     </span>
   );
 }
 
 function VMCard({ vm, onConnect, onEdit, onDelete }: { vm: VMWithStatus; onConnect: (vm: VMWithStatus) => void; onEdit: (vm: VMWithStatus) => void; onDelete: (vm: VMWithStatus) => void }) {
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:border-gray-600 transition-colors">
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
       <div className="flex items-start justify-between mb-3">
-        <h3 className="text-lg font-semibold text-gray-100 truncate">{vm.label}</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{vm.label}</h3>
         <StatusIndicator status={vm.status} />
       </div>
 
-      <div className="space-y-1 text-sm text-gray-400">
+      <div className="space-y-1 text-sm text-gray-500 dark:text-gray-400">
         <p>
-          <span className="text-gray-500">Host:</span>{' '}
-          <span className="text-gray-300 font-mono">{vm.host}</span>
+          <span className="text-gray-400 dark:text-gray-500">Host:</span>{' '}
+          <span className="text-gray-700 dark:text-gray-300 font-mono">{vm.host}</span>
         </p>
         <p>
-          <span className="text-gray-500">Port:</span>{' '}
-          <span className="text-gray-300 font-mono">{vm.port}</span>
+          <span className="text-gray-400 dark:text-gray-500">Port:</span>{' '}
+          <span className="text-gray-700 dark:text-gray-300 font-mono">{vm.port}</span>
         </p>
         <p>
-          <span className="text-gray-500">User:</span>{' '}
-          <span className="text-gray-300">{vm.username}</span>
+          <span className="text-gray-400 dark:text-gray-500">User:</span>{' '}
+          <span className="text-gray-700 dark:text-gray-300">{vm.username}</span>
         </p>
       </div>
 
@@ -105,7 +105,7 @@ function VMCard({ vm, onConnect, onEdit, onDelete }: { vm: VMWithStatus; onConne
         </button>
         <button
           onClick={() => onEdit(vm)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-200 bg-gray-600 hover:bg-gray-500 rounded-md transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded-md transition-colors"
           aria-label={`Edit ${vm.label}`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,7 +115,7 @@ function VMCard({ vm, onConnect, onEdit, onDelete }: { vm: VMWithStatus; onConne
         </button>
         <button
           onClick={() => onDelete(vm)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-300 bg-red-900/50 hover:bg-red-800 rounded-md transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-800 rounded-md transition-colors"
           aria-label={`Delete ${vm.label}`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -188,12 +188,12 @@ function AddVMModal({
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative w-full max-w-md bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-4 md:p-6 max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-4 md:p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-100">Add New VM</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Add New VM</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-200"
+            className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
             aria-label="Close modal"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -204,7 +204,7 @@ function AddVMModal({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="vm-label" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="vm-label" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Label
             </label>
             <input
@@ -212,14 +212,14 @@ function AddVMModal({
               type="text"
               value={formData.label}
               onChange={(e) => setFormData({ ...formData, label: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="e.g. Production Server"
               disabled={isSubmitting}
             />
           </div>
 
           <div>
-            <label htmlFor="vm-host" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="vm-host" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Host
             </label>
             <input
@@ -227,14 +227,14 @@ function AddVMModal({
               type="text"
               value={formData.host}
               onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="e.g. 192.168.1.100"
               disabled={isSubmitting}
             />
           </div>
 
           <div>
-            <label htmlFor="vm-port" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="vm-port" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Port
             </label>
             <input
@@ -244,14 +244,14 @@ function AddVMModal({
               max="65535"
               value={formData.port}
               onChange={(e) => setFormData({ ...formData, port: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="22"
               disabled={isSubmitting}
             />
           </div>
 
           <div>
-            <label htmlFor="vm-username" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="vm-username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Username
             </label>
             <input
@@ -259,14 +259,14 @@ function AddVMModal({
               type="text"
               value={formData.username}
               onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="e.g. root"
               disabled={isSubmitting}
             />
           </div>
 
           <div>
-            <label htmlFor="vm-password" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="vm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Password
             </label>
             <input
@@ -274,14 +274,14 @@ function AddVMModal({
               type="password"
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Enter password"
               disabled={isSubmitting}
             />
           </div>
 
           {error && (
-            <div role="alert" className="text-sm text-red-400 bg-red-900/30 border border-red-800 rounded-md px-3 py-2">
+            <div role="alert" className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-md px-3 py-2">
               {error}
             </div>
           )}
@@ -291,7 +291,7 @@ function AddVMModal({
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="flex-1 px-4 py-2 text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors disabled:opacity-50"
+              className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -344,10 +344,10 @@ function EditVMModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/60" onClick={onClose} aria-hidden="true" />
-      <div className="relative w-full max-w-md bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-6 max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-100">Edit VM</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-200" aria-label="Close">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Edit VM</h2>
+          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" aria-label="Close">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -356,63 +356,63 @@ function EditVMModal({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Label</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Label</label>
             <input
               type="text"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Host</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Host</label>
             <input
               type="text"
               value={host}
               onChange={(e) => setHost(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Port</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Port</label>
             <input
               type="number"
               min="1"
               max="65535"
               value={port}
               onChange={(e) => setPort(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Username</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
-              Password <span className="text-gray-500">(kosongkan jika tidak ingin ganti)</span>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Password <span className="text-gray-400 dark:text-gray-500">(kosongkan jika tidak ingin ganti)</span>
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+              className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
             >
               Cancel
             </button>
@@ -437,6 +437,7 @@ export default function DashboardPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
+  const [activeTerminalTabId, setActiveTerminalTabId] = useState<string | null>(null);
   const [logViewerVm, setLogViewerVm] = useState<VMWithStatus | null>(null);
   const [editVm, setEditVm] = useState<VMWithStatus | null>(null);
   const [deleteVm, setDeleteVm] = useState<VMWithStatus | null>(null);
@@ -504,7 +505,8 @@ export default function DashboardPage() {
     // Check if a tab for this VM already exists
     const existingTab = terminalTabs.find(tab => tab.vmId === vm.id);
     if (existingTab) {
-      // Tab already exists, it will be activated by the panel
+      // Tab already exists, activate it
+      setActiveTerminalTabId(existingTab.id);
       return;
     }
 
@@ -516,11 +518,24 @@ export default function DashboardPage() {
     };
 
     setTerminalTabs(prev => [...prev, newTab]);
+    setActiveTerminalTabId(newTab.id);
   }, [terminalTabs]);
 
   const handleCloseTab = useCallback((tabId: string) => {
-    setTerminalTabs(prev => prev.filter(tab => tab.id !== tabId));
-  }, []);
+    setTerminalTabs(prev => {
+      const remaining = prev.filter(tab => tab.id !== tabId);
+      // If closing the active tab, switch to another
+      if (activeTerminalTabId === tabId) {
+        const idx = prev.findIndex(t => t.id === tabId);
+        if (remaining.length > 0) {
+          setActiveTerminalTabId(remaining[Math.min(idx, remaining.length - 1)].id);
+        } else {
+          setActiveTerminalTabId(null);
+        }
+      }
+      return remaining;
+    });
+  }, [activeTerminalTabId]);
 
   const handleViewLogs = useCallback((vm: VMWithStatus) => {
     setLogViewerVm(vm);
@@ -618,7 +633,7 @@ export default function DashboardPage() {
       <div className={`${terminalTabs.length > 0 ? 'flex-shrink-0' : 'flex-1'}`}>
         {/* Page header */}
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-100">Virtual Machines</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Virtual Machines</h1>
           <button
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
@@ -632,7 +647,7 @@ export default function DashboardPage() {
 
         {/* Error state */}
         {error && (
-          <div role="alert" className="mb-4 text-sm text-red-400 bg-red-900/30 border border-red-800 rounded-md px-4 py-3">
+          <div role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-md px-4 py-3">
             {error}
           </div>
         )}
@@ -640,18 +655,18 @@ export default function DashboardPage() {
         {/* Loading state */}
         {isLoading && (
           <div className="flex items-center justify-center py-12">
-            <div className="text-gray-400">Loading VMs...</div>
+            <div className="text-gray-500 dark:text-gray-400">Loading VMs...</div>
           </div>
         )}
 
         {/* Empty state */}
         {!isLoading && !error && vms.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <svg className="w-16 h-16 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-16 h-16 text-gray-400 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
             </svg>
-            <p className="text-gray-400 mb-2">No VMs configured yet</p>
-            <p className="text-sm text-gray-500">Click &quot;Add VM&quot; to get started</p>
+            <p className="text-gray-500 dark:text-gray-400 mb-2">No VMs configured yet</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">Click &quot;Add VM&quot; to get started</p>
           </div>
         )}
 
@@ -667,11 +682,47 @@ export default function DashboardPage() {
 
       {/* Terminal panel */}
       {terminalTabs.length > 0 && (
-        <div className="flex-1 min-h-[250px] md:min-h-[300px] mt-4">
-          <TerminalPanel
-            tabs={terminalTabs}
-            onCloseTab={handleCloseTab}
-          />
+        <div className="flex-1 min-h-[250px] md:min-h-[300px] mt-4 flex flex-col">
+          {/* VM Terminal Tabs - always visible */}
+          <div className="flex items-center bg-gray-800 border border-gray-700 rounded-t-lg overflow-x-auto flex-shrink-0">
+            {terminalTabs.map((tab) => (
+              <div
+                key={tab.id}
+                onClick={() => setActiveTerminalTabId(tab.id)}
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-r border-gray-700 min-w-0 transition-colors ${
+                  activeTerminalTabId === tab.id
+                    ? 'bg-gray-900 text-white border-b-2 border-b-green-500'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                title={tab.vmLabel}
+              >
+                <svg className="w-3.5 h-3.5 flex-shrink-0 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span className="truncate max-w-[100px]">{tab.vmLabel}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCloseTab(tab.id);
+                  }}
+                  className="ml-1 text-gray-500 hover:text-red-400 flex-shrink-0"
+                  aria-label={`Close terminal for ${tab.vmLabel}`}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+          {/* Terminal content */}
+          <div className="flex-1 min-h-0">
+            <TerminalPanel
+              tabs={terminalTabs}
+              activeTabId={activeTerminalTabId}
+              onCloseTab={handleCloseTab}
+            />
+          </div>
         </div>
       )}
 
@@ -714,16 +765,16 @@ export default function DashboardPage() {
       {deleteVm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/60" onClick={() => setDeleteVm(null)} aria-hidden="true" />
-          <div className="relative w-full max-w-sm bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-6">
-            <h2 className="text-lg font-semibold text-gray-100 mb-2">Delete VM</h2>
-            <p className="text-sm text-gray-400 mb-4">
-              Yakin ingin menghapus <span className="text-white font-medium">{deleteVm.label}</span>? Aksi ini tidak bisa di-undo.
+          <div className="relative w-full max-w-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Delete VM</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Yakin ingin menghapus <span className="text-gray-900 dark:text-white font-medium">{deleteVm.label}</span>? Aksi ini tidak bisa di-undo.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setDeleteVm(null)}
                 disabled={isDeleting}
-                className="flex-1 px-4 py-2 text-sm font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
               >
                 Batal
               </button>

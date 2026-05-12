@@ -48,3 +48,36 @@ CREATE TABLE IF NOT EXISTS ai_settings (
   model TEXT NOT NULL DEFAULT 'gpt-4o-mini',
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Database Connections
+CREATE TABLE IF NOT EXISTS database_connections (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  vm_id TEXT REFERENCES vms(id) ON DELETE SET NULL,
+  db_type TEXT NOT NULL CHECK(db_type IN ('mysql', 'postgresql', 'mariadb')),
+  host TEXT NOT NULL DEFAULT 'localhost',
+  port INTEGER NOT NULL,
+  db_username TEXT NOT NULL,
+  encrypted_password TEXT NOT NULL,
+  encryption_iv TEXT NOT NULL,
+  encryption_auth_tag TEXT NOT NULL,
+  label TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Query History
+CREATE TABLE IF NOT EXISTS query_history (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  connection_id TEXT NOT NULL REFERENCES database_connections(id) ON DELETE CASCADE,
+  database_name TEXT,
+  query_text TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('success', 'error')),
+  error_message TEXT,
+  execution_time_ms INTEGER,
+  row_count INTEGER,
+  executed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index for efficient history lookup and cleanup
+CREATE INDEX IF NOT EXISTS idx_query_history_connection 
+  ON query_history(connection_id, executed_at DESC);

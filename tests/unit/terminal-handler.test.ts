@@ -79,13 +79,14 @@ function createMockShell(): SSHShellStream & {
 describe('Terminal Handler', () => {
   let mockSocket: ReturnType<typeof createMockSocket>;
   let mockShell: ReturnType<typeof createMockShell>;
-  let mockSSHManager: { openShell: ReturnType<typeof vi.fn> };
+  let mockSSHManager: { openShell: ReturnType<typeof vi.fn>; executeCommand: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mockSocket = createMockSocket();
     mockShell = createMockShell();
     mockSSHManager = {
       openShell: vi.fn().mockResolvedValue(mockShell),
+      executeCommand: vi.fn().mockResolvedValue(''),
     };
 
     vi.mocked(getSSHManager).mockReturnValue(mockSSHManager as any);
@@ -110,6 +111,7 @@ describe('Terminal Handler', () => {
       expect(mockSocket.on).toHaveBeenCalledWith('terminal:input', expect.any(Function));
       expect(mockSocket.on).toHaveBeenCalledWith('terminal:resize', expect.any(Function));
       expect(mockSocket.on).toHaveBeenCalledWith('terminal:close', expect.any(Function));
+      expect(mockSocket.on).toHaveBeenCalledWith('terminal:check-git', expect.any(Function));
       expect(mockSocket.on).toHaveBeenCalledWith('disconnect', expect.any(Function));
     });
   });
@@ -120,7 +122,7 @@ describe('Terminal Handler', () => {
 
       await mockSocket._trigger('terminal:open', 'vm-123');
 
-      expect(mockSSHManager.openShell).toHaveBeenCalledWith('vm-123');
+      expect(mockSSHManager.openShell).toHaveBeenCalledWith('vm-123', 80, 24);
       expect(mockShell.onData).toHaveBeenCalledWith(expect.any(Function));
       expect(mockShell.onClose).toHaveBeenCalledWith(expect.any(Function));
 
@@ -190,6 +192,14 @@ describe('Terminal Handler', () => {
       expect(firstShell.close).toHaveBeenCalled();
       const sessions = getActiveSessions();
       expect(sessions.get('test-socket-id')!.vmId).toBe('vm-222');
+    });
+
+    it('should accept initial size parameters', async () => {
+      registerTerminalHandlers(mockSocket as any);
+
+      await mockSocket._trigger('terminal:open', 'vm-123', { cols: 120, rows: 40 });
+
+      expect(mockSSHManager.openShell).toHaveBeenCalledWith('vm-123', 120, 40);
     });
   });
 
@@ -307,6 +317,105 @@ describe('Terminal Handler', () => {
       await mockSocket._trigger('disconnect');
 
       expect(getActiveSessions().has('test-socket-id')).toBe(false);
+    });
+  });
+
+  describe('terminal:check-git', () => {
+    it('should emit git-info with branch when directory is a git repo', async () => {
+      registerTerminalHandlers(mockSocket as any);
+      // Need an active session for check-git to work
+      await mockSocket._trigger('terminal:open', 'vm-123');
+
+      // Mock executeCommand to return git info with markers
+      mockSSHManager.executeCommand.mockImplementation((_vmId: string, cmd: string) => {
+        const startMatch = cmd.match(/__GITCK_(\d+)__/);
+        const endMatch = cmd.match(/__GITCK_END_(\d+)__/);
+        const marker = `__GITCK_${startMatch?.[1]}__`;
+        const endMarker = `__GITCK_END_${endMatch?.[1]}__`;
+        return Promise.resolve(`${marker}\n/home/user/project\ntrue\nmain\n${endMarker}`);
+      });
+
+      await mockSocket._trigger('terminal:check-git', 'vm-123');
+
+      expect(mockSSHManager.executeCommand).toHaveBeenCalledWith(
+        'vm-123',
+        expect.stringContaining('git rev-parse --is-inside-work-tree')
+      );
+      expect(mockSocket.emit).toHaveBeenCalledWith('terminal:git-info', {
+        isGit: true,
+        branch: 'main',
+        directory: '/home/user/project',
+      });
+    });
+
+    it('should emit git-info with isGit false when not a git repo', async () => {
+      registerTerminalHandlers(mockSocket as any);
+      await mockSocket._trigger('terminal:open', 'vm-123');
+
+      mockSSHManager.executeCommand.mockImplementation((_vmId: string, cmd: string) => {
+        const startMatch = cmd.match(/__GITCK_(\d+)__/);
+        const endMatch = cmd.match(/__GITCK_END_(\d+)__/);
+        const marker = `__GITCK_${startMatch?.[1]}__`;
+        const endMarker = `__GITCK_END_${endMatch?.[1]}__`;
+        return Promise.resolve(`${marker}\n/tmp\n${endMarker}`);
+      });
+
+      await mockSocket._trigger('terminal:check-git', 'vm-123');
+
+      expect(mockSocket.emit).toHaveBeenCalledWith('terminal:git-info', {
+        isGit: false,
+        branch: null,
+        directory: '/tmp',
+      });
+    });
+
+    it('should emit isGit false when no active session exists', async () => {
+      registerTerminalHandlers(mockSocket as any);
+
+      await mockSocket._trigger('terminal:check-git', 'vm-123');
+
+      expect(mockSocket.emit).toHaveBeenCalledWith('terminal:git-info', {
+        isGit: false,
+        branch: null,
+        directory: '',
+      });
+    });
+
+    it('should handle detached HEAD state', async () => {
+      registerTerminalHandlers(mockSocket as any);
+      await mockSocket._trigger('terminal:open', 'vm-123');
+
+      mockSSHManager.executeCommand.mockImplementation((_vmId: string, cmd: string) => {
+        const startMatch = cmd.match(/__GITCK_(\d+)__/);
+        const endMatch = cmd.match(/__GITCK_END_(\d+)__/);
+        const marker = `__GITCK_${startMatch?.[1]}__`;
+        const endMarker = `__GITCK_END_${endMatch?.[1]}__`;
+        // git branch --show-current returns empty on detached HEAD
+        return Promise.resolve(`${marker}\n/home/user/project\ntrue\n${endMarker}`);
+      });
+
+      await mockSocket._trigger('terminal:check-git', 'vm-123');
+
+      expect(mockSocket.emit).toHaveBeenCalledWith('terminal:git-info', {
+        isGit: true,
+        branch: 'HEAD (detached)',
+        directory: '/home/user/project',
+      });
+    });
+
+    it('should emit isGit false when executeCommand throws an error', async () => {
+      registerTerminalHandlers(mockSocket as any);
+      await mockSocket._trigger('terminal:open', 'vm-123');
+
+      mockSSHManager.executeCommand.mockRejectedValue(new Error('SSH connection failed'));
+
+      await mockSocket._trigger('terminal:check-git', 'vm-123');
+
+      expect(mockSocket.emit).toHaveBeenCalledWith('terminal:git-info', {
+        isGit: false,
+        branch: null,
+        directory: '',
+      });
     });
   });
 });
