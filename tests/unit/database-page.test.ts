@@ -33,8 +33,8 @@ describe('DatabaseManagementPage - module structure', () => {
     expect(pageContent).toContain("import('@/components/db/SQLEditor')");
   });
 
-  it('should import QueryResults component', () => {
-    expect(pageContent).toContain("import QueryResults from '@/components/db/QueryResults'");
+  it('should import TableTabs component', () => {
+    expect(pageContent).toContain("import TableTabs from '@/components/db/TableTabs'");
   });
 
   it('should import QueryHistory component', () => {
@@ -49,8 +49,8 @@ describe('DatabaseManagementPage - module structure', () => {
     expect(pageContent).toContain('isLoadingConnections');
   });
 
-  it('should have loading state for query execution', () => {
-    expect(pageContent).toContain('isExecutingQuery');
+  it('should have loading state for query execution via tabs', () => {
+    expect(pageContent).toContain('isLoading: true');
   });
 
   it('should have loading state for history', () => {

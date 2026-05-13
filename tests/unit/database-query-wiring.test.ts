@@ -31,26 +31,26 @@ describe('DatabaseManagementPage - Query execution wiring (task 13.2)', () => {
       expect(pageContent).toContain("if (!queryToRun || !activeConnectionId) return");
     });
 
-    it('should set loading state during execution', () => {
-      expect(pageContent).toContain('setIsExecutingQuery(true)');
-      expect(pageContent).toContain('setIsExecutingQuery(false)');
+    it('should set loading state during execution via tab', () => {
+      expect(pageContent).toContain('isLoading: true');
+      expect(pageContent).toContain('isLoading: false');
     });
 
-    it('should clear previous results and errors before execution', () => {
-      expect(pageContent).toContain('setQueryError(null)');
-      expect(pageContent).toContain('setQueryResult(null)');
+    it('should create a new tab for query results', () => {
+      expect(pageContent).toContain('setTableTabs((prev) => [...prev, newTab])');
+      expect(pageContent).toContain('setActiveTabId(tabId)');
     });
 
     it('should switch to results panel on execution', () => {
       expect(pageContent).toContain("setActivePanel('results')");
     });
 
-    it('should set query result on success', () => {
-      expect(pageContent).toContain('setQueryResult(result)');
+    it('should set query result on success via tab update', () => {
+      expect(pageContent).toContain('{ ...t, result, isLoading: false }');
     });
 
-    it('should set query error on failure', () => {
-      expect(pageContent).toContain("setQueryError(err.message || 'Query execution failed')");
+    it('should set query error on failure via tab update', () => {
+      expect(pageContent).toContain("err.message || 'Query execution failed'");
     });
   });
 
@@ -100,21 +100,21 @@ describe('DatabaseManagementPage - Query execution wiring (task 13.2)', () => {
   });
 
   describe('Export CSV - POST /api/databases/[id]/export', () => {
-    it('should have an async handleExport function', () => {
-      expect(pageContent).toContain('const handleExport = useCallback(async ()');
+    it('should have an async handleExportTab function', () => {
+      expect(pageContent).toContain('const handleExportTab = useCallback(async (tab: TableTab)');
     });
 
-    it('should POST to /api/databases/[id]/export', () => {
-      expect(pageContent).toContain('`/api/databases/${activeConnectionId}/export`');
+    it('should POST to /api/databases/[connId]/export', () => {
+      expect(pageContent).toContain('`/api/databases/${tab.connId}/export`');
     });
 
-    it('should send columns and rows from query result', () => {
-      expect(pageContent).toContain('columns: queryResult.columns');
-      expect(pageContent).toContain('rows: queryResult.rows');
+    it('should send columns and rows from tab result', () => {
+      expect(pageContent).toContain('columns: tab.result.columns');
+      expect(pageContent).toContain('rows: tab.result.rows');
     });
 
-    it('should not export if no query result', () => {
-      expect(pageContent).toContain('if (!queryResult || !activeConnectionId) return');
+    it('should not export if no tab result', () => {
+      expect(pageContent).toContain('if (!tab.result) return');
     });
 
     it('should extract filename from Content-Disposition header', () => {
@@ -137,8 +137,8 @@ describe('DatabaseManagementPage - Query execution wiring (task 13.2)', () => {
       expect(pageContent).toContain("setApiError(err.message || 'Export failed')");
     });
 
-    it('should pass handleExport to QueryResults component', () => {
-      expect(pageContent).toContain('onExport={handleExport}');
+    it('should pass handleExportTab to TableTabs component', () => {
+      expect(pageContent).toContain('onExport={handleExportTab}');
     });
   });
 
@@ -156,10 +156,11 @@ describe('DatabaseManagementPage - Query execution wiring (task 13.2)', () => {
       expect(pageContent).toContain('disabled={!activeConnectionId}');
     });
 
-    it('should pass query result and error to QueryResults', () => {
-      expect(pageContent).toContain('result={queryResult}');
-      expect(pageContent).toContain('error={queryError}');
-      expect(pageContent).toContain('isLoading={isExecutingQuery}');
+    it('should pass tabs and handlers to TableTabs', () => {
+      expect(pageContent).toContain('tabs={tableTabs}');
+      expect(pageContent).toContain('activeTabId={activeTabId}');
+      expect(pageContent).toContain('onCloseTab={handleCloseTab}');
+      expect(pageContent).toContain('onRefreshTab={handleRefreshTab}');
     });
 
     it('should pass history entries to QueryHistory', () => {
