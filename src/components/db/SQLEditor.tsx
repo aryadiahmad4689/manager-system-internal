@@ -1,9 +1,10 @@
 'use client';
 
 import { useRef, useEffect, useCallback } from 'react';
-import { EditorState } from '@codemirror/state';
+import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view';
-import { sql } from '@codemirror/lang-sql';
+import { sql, MySQL, MariaSQL } from '@codemirror/lang-sql';
+import type { SQLNamespace } from '@codemirror/lang-sql';
 import { basicSetup } from 'codemirror';
 import { isRunQueryShortcut, getRunShortcutLabel, isDarkMode } from './sql-editor-utils';
 
@@ -14,6 +15,8 @@ export interface SQLEditorProps {
   onRun: (selectedText: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  /** Schema for autocomplete: nested object { db: { table: [columns] } } */
+  schema?: SQLNamespace;
 }
 
 /**
@@ -94,11 +97,13 @@ export default function SQLEditor({
   onRun,
   disabled = false,
   placeholder,
+  schema,
 }: SQLEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onRunRef = useRef(onRun);
   const onChangeRef = useRef(onChange);
+  const sqlCompartment = useRef(new Compartment());
   // Store the last known selection so it persists even when editor loses focus
   const lastSelectionRef = useRef<{ from: number; to: number }>({ from: 0, to: 0 });
 
@@ -132,7 +137,7 @@ export default function SQLEditor({
 
     const extensions = [
       basicSetup,
-      sql(),
+      sqlCompartment.current.of(sql({ dialect: MySQL, schema: schema || undefined })),
       runQueryKeymap,
       dark ? darkTheme : lightTheme,
       // Force selection to be visible with high-specificity theme override
@@ -196,6 +201,15 @@ export default function SQLEditor({
     }
   }, [value]);
 
+  // Update SQL schema for autocomplete when it changes
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: sqlCompartment.current.reconfigure(sql({ dialect: MySQL, schema: schema || undefined })),
+    });
+  }, [schema]);
+
   // Handle the Run Query button click
   const handleRun = useCallback(() => {
     if (!disabled) {
@@ -239,7 +253,7 @@ export default function SQLEditor({
       {/* CodeMirror Editor Container */}
       <div
         ref={editorRef}
-        className={`min-h-[200px] max-h-[400px] overflow-auto ${
+        className={`min-h-[120px] max-h-[200px] overflow-auto ${
           disabled ? 'opacity-50 pointer-events-none' : ''
         }`}
         data-testid="sql-editor-codemirror"

@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import ConnectionList from '@/components/db/ConnectionList';
-import QueryResults from '@/components/db/QueryResults';
 import QueryHistory from '@/components/db/QueryHistory';
 import ConnectionForm from '@/components/db/ConnectionForm';
+import TableTabs from '@/components/db/TableTabs';
+import type { TableTab } from '@/components/db/TableTabs';
 import type { ConnectionItem } from '@/components/db/ConnectionList';
 import type { ColumnInfo } from '@/components/db/database-tree-utils';
-import type { QueryResult } from '@/components/db/QueryResults';
 import type { QueryHistoryEntry } from '@/components/db/QueryHistory';
 import type { ConnectionFormData } from '@/components/db/ConnectionForm';
 
@@ -44,9 +44,7 @@ export default function DatabaseManagementPage() {
 
   // Query state
   const [sqlValue, setSqlValue] = useState('');
-  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
-  const [queryError, setQueryError] = useState<string | null>(null);
-  const [isExecutingQuery, setIsExecutingQuery] = useState(false);
+  const [queryTabCounter, setQueryTabCounter] = useState(0);
 
   // History state
   const [queryHistory, setQueryHistory] = useState<QueryHistoryEntry[]>([]);
@@ -55,9 +53,64 @@ export default function DatabaseManagementPage() {
   // UI state
   const [activePanel, setActivePanel] = useState<MainPanel>('results');
   const [treeSearchQuery, setTreeSearchQuery] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Table tabs state
+  const [tableTabs, setTableTabs] = useState<TableTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+
+  // Confirmation modal state
+  const [confirmQuery, setConfirmQuery] = useState<{ sql: string; selectedText?: string } | null>(null);
+
+  // Table action picker state
+  const [tableActionPicker, setTableActionPicker] = useState<{ connId: string; dbName: string; tableName: string } | null>(null);
 
   // Error state
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // Build schema for SQL autocomplete from loaded table structures
+  const editorSchema = useMemo(() => {
+    const schema: Record<string, Record<string, readonly string[]>> = {};
+
+    // Build from tableStructure: key = "connId.dbName.tableName"
+    for (const [key, columns] of Object.entries(tableStructure)) {
+      // Find the connId by checking which connection this belongs to
+      const colNames = columns.map((col) => col.name);
+
+      for (const connId of Object.keys(connectionDatabases)) {
+        if (key.startsWith(`${connId}.`)) {
+          const rest = key.slice(connId.length + 1); // "dbName.tableName"
+          const dotIdx = rest.indexOf('.');
+          if (dotIdx !== -1) {
+            const dbName = rest.slice(0, dotIdx);
+            const tableName = rest.slice(dotIdx + 1);
+
+            if (!schema[dbName]) schema[dbName] = {};
+            schema[dbName][tableName] = colNames;
+          }
+          break;
+        }
+      }
+    }
+
+    // Add tables without columns from tables state: key = "connId.dbName"
+    for (const [key, tableList] of Object.entries(tables)) {
+      for (const connId of Object.keys(connectionDatabases)) {
+        if (key.startsWith(`${connId}.`)) {
+          const dbName = key.slice(connId.length + 1);
+          if (!schema[dbName]) schema[dbName] = {};
+          for (const tableName of tableList) {
+            if (!schema[dbName][tableName]) {
+              schema[dbName][tableName] = [];
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    return schema;
+  }, [tableStructure, tables, connectionDatabases]);
 
   // --- Fetch status for a single connection ---
   const fetchConnectionStatus = useCallback(async (id: string): Promise<ConnectionItem['status']> => {
@@ -355,11 +408,40 @@ export default function DatabaseManagementPage() {
 
   // --- Query handlers ---
   const handlePreviewTable = useCallback(async (connId: string, dbName: string, tableName: string) => {
-    setActiveConnectionId(connId);
-    setIsExecutingQuery(true);
-    setQueryError(null);
-    setQueryResult(null);
+    const tabId = `${connId}.${dbName}.${tableName}`;
+
+    // If tab already exists, just switch to it
+    const existingTab = tableTabs.find((t) => t.id === tabId);
+    if (existingTab) {
+      setActiveTabId(tabId);
+      setActivePanel('results');
+      return;
+    }
+
+    // Show action picker
+    setTableActionPicker({ connId, dbName, tableName });
+  }, [tableTabs]);
+
+  const handleViewTableData = useCallback(async () => {
+    if (!tableActionPicker) return;
+    const { connId, dbName, tableName } = tableActionPicker;
+    setTableActionPicker(null);
+
+    const tabId = `${connId}.${dbName}.${tableName}`;
+    const newTab: TableTab = {
+      id: tabId,
+      connId,
+      dbName,
+      tableName,
+      result: null,
+      error: null,
+      isLoading: true,
+    };
+
+    setTableTabs((prev) => [...prev, newTab]);
+    setActiveTabId(tabId);
     setActivePanel('results');
+    setActiveConnectionId(connId);
 
     const sql = `SELECT * FROM \`${dbName}\`.\`${tableName}\` LIMIT 300`;
     setSqlValue(sql);
@@ -377,20 +459,171 @@ export default function DatabaseManagementPage() {
       }
 
       const result = await res.json();
-      setQueryResult(result);
+      setTableTabs((prev) =>
+        prev.map((t) => (t.id === tabId ? { ...t, result, isLoading: false } : t))
+      );
     } catch (err: any) {
-      setQueryError(err.message || 'Query execution failed');
+      setTableTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId ? { ...t, error: err.message || 'Query execution failed', isLoading: false } : t
+        )
+      );
     } finally {
-      setIsExecutingQuery(false);
       fetchHistory();
     }
-  }, [fetchHistory]);
+  }, [tableActionPicker, fetchHistory]);
+
+  // DDL modal state
+  const [ddlContent, setDdlContent] = useState<{ tableName: string; ddl: string } | null>(null);
+  const [ddlLoading, setDdlLoading] = useState(false);
+
+  const handleViewTableDDL = useCallback(async () => {
+    if (!tableActionPicker) return;
+    const { connId, dbName, tableName } = tableActionPicker;
+    setTableActionPicker(null);
+    setDdlLoading(true);
+    setDdlContent({ tableName: `${dbName}.${tableName}`, ddl: '' });
+
+    const sql = `SHOW CREATE TABLE \`${dbName}\`.\`${tableName}\``;
+
+    try {
+      const res = await fetch(`/api/databases/${connId}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql, database: dbName }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Query execution failed');
+      }
+
+      const result = await res.json();
+      // SHOW CREATE TABLE returns a row with "Create Table" column
+      let ddlText = '';
+      if (result.rows && result.rows.length > 0) {
+        const row = result.rows[0];
+        ddlText = row['Create Table'] || row['Create View'] || JSON.stringify(row, null, 2);
+      }
+      setDdlContent({ tableName: `${dbName}.${tableName}`, ddl: ddlText });
+    } catch (err: any) {
+      setDdlContent({ tableName: `${dbName}.${tableName}`, ddl: `-- Error: ${err.message}` });
+    } finally {
+      setDdlLoading(false);
+    }
+  }, [tableActionPicker]);
+
+  const handleCopyDDL = useCallback(() => {
+    if (ddlContent?.ddl) {
+      navigator.clipboard.writeText(ddlContent.ddl);
+    }
+  }, [ddlContent]);
+
+  const handleRefreshTab = useCallback(async (tab: TableTab) => {
+    const { id: tabId, connId, dbName, tableName } = tab;
+
+    setTableTabs((prev) =>
+      prev.map((t) => (t.id === tabId ? { ...t, isLoading: true, error: null } : t))
+    );
+
+    const sql = `SELECT * FROM \`${dbName}\`.\`${tableName}\` LIMIT 300`;
+
+    try {
+      const res = await fetch(`/api/databases/${connId}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql, database: dbName }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Query execution failed');
+      }
+
+      const result = await res.json();
+      setTableTabs((prev) =>
+        prev.map((t) => (t.id === tabId ? { ...t, result, error: null, isLoading: false } : t))
+      );
+    } catch (err: any) {
+      setTableTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId ? { ...t, error: err.message || 'Query execution failed', isLoading: false } : t
+        )
+      );
+    }
+  }, []);
+
+  const handleCloseTab = useCallback((tabId: string) => {
+    setTableTabs((prev) => {
+      const newTabs = prev.filter((t) => t.id !== tabId);
+      // If we closed the active tab, switch to the last remaining tab or null
+      if (activeTabId === tabId) {
+        const lastTab = newTabs[newTabs.length - 1];
+        setActiveTabId(lastTab ? lastTab.id : null);
+      }
+      return newTabs;
+    });
+  }, [activeTabId]);
+
+  const handleExportTab = useCallback(async (tab: TableTab) => {
+    if (!tab.result) return;
+    try {
+      const res = await fetch(`/api/databases/${tab.connId}/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          columns: tab.result.columns,
+          rows: tab.result.rows,
+          database: tab.dbName,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Export failed');
+      }
+
+      const disposition = res.headers.get('Content-Disposition');
+      let filename = 'export.csv';
+      if (disposition) {
+        const match = disposition.match(/filename="?([^"]+)"?/);
+        if (match) {
+          filename = match[1];
+        }
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setApiError(err.message || 'Export failed');
+    }
+  }, []);
 
   const handleRunQuery = useCallback(async (selectedText?: string) => {
     // If selectedText is empty string, it means nothing was selected — show warning
     if (selectedText !== undefined && selectedText.trim() === '') {
-      setQueryError('Blok/select query yang ingin dijalankan terlebih dahulu');
-      setQueryResult(null);
+      // Create an error tab for the warning
+      const counter = queryTabCounter + 1;
+      setQueryTabCounter(counter);
+      const tabId = `query.${counter}`;
+      const newTab: TableTab = {
+        id: tabId,
+        connId: activeConnectionId || '',
+        dbName: 'Query',
+        tableName: `Result #${counter}`,
+        result: null,
+        error: 'Blok/select query yang ingin dijalankan terlebih dahulu',
+        isLoading: false,
+      };
+      setTableTabs((prev) => [...prev, newTab]);
+      setActiveTabId(tabId);
       setActivePanel('results');
       return;
     }
@@ -398,9 +631,40 @@ export default function DatabaseManagementPage() {
     const queryToRun = selectedText ? selectedText.trim() : sqlValue.trim();
     if (!queryToRun || !activeConnectionId) return;
 
-    setIsExecutingQuery(true);
-    setQueryError(null);
-    setQueryResult(null);
+    // Check if query is a dangerous mutation (INSERT, UPDATE, DELETE)
+    const upperQuery = queryToRun.toUpperCase().trimStart();
+    const isDangerous = upperQuery.startsWith('INSERT') || upperQuery.startsWith('UPDATE') || upperQuery.startsWith('DELETE') || upperQuery.startsWith('DROP') || upperQuery.startsWith('ALTER') || upperQuery.startsWith('TRUNCATE');
+
+    if (isDangerous) {
+      setConfirmQuery({ sql: queryToRun, selectedText });
+      return;
+    }
+
+    await executeQuery(queryToRun);
+  }, [sqlValue, activeConnectionId, queryTabCounter]);
+
+  // Actually execute the query (called directly or after confirmation)
+  const executeQuery = useCallback(async (queryToRun: string) => {
+    if (!activeConnectionId) return;
+
+    const counter = queryTabCounter + 1;
+    setQueryTabCounter(counter);
+    const tabId = `query.${counter}`;
+
+    // Create a new tab for this query result
+    const queryLabel = queryToRun.length > 30 ? queryToRun.substring(0, 30) + '...' : queryToRun;
+    const newTab: TableTab = {
+      id: tabId,
+      connId: activeConnectionId,
+      dbName: 'Query',
+      tableName: queryLabel,
+      result: null,
+      error: null,
+      isLoading: true,
+    };
+
+    setTableTabs((prev) => [...prev, newTab]);
+    setActiveTabId(tabId);
     setActivePanel('results');
 
     try {
@@ -416,64 +680,44 @@ export default function DatabaseManagementPage() {
       }
 
       const result = await res.json();
-      setQueryResult(result);
+      setTableTabs((prev) =>
+        prev.map((t) => (t.id === tabId ? { ...t, result, isLoading: false } : t))
+      );
     } catch (err: any) {
-      setQueryError(err.message || 'Query execution failed');
+      setTableTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId ? { ...t, error: err.message || 'Query execution failed', isLoading: false } : t
+        )
+      );
     } finally {
-      setIsExecutingQuery(false);
       // Auto-refresh history after each execution
       fetchHistory();
     }
-  }, [sqlValue, activeConnectionId, fetchHistory]);
+  }, [activeConnectionId, fetchHistory, queryTabCounter]);
 
-  // Wire to POST /api/databases/[id]/export and trigger file download
-  const handleExport = useCallback(async () => {
-    if (!queryResult || !activeConnectionId) return;
-    try {
-      const res = await fetch(`/api/databases/${activeConnectionId}/export`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          columns: queryResult.columns,
-          rows: queryResult.rows,
-          database: 'query_result',
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Export failed');
-      }
-
-      // Get the filename from Content-Disposition header
-      const disposition = res.headers.get('Content-Disposition');
-      let filename = 'export.csv';
-      if (disposition) {
-        const match = disposition.match(/filename="?([^"]+)"?/);
-        if (match) {
-          filename = match[1];
-        }
-      }
-
-      // Trigger file download
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (err: any) {
-      setApiError(err.message || 'Export failed');
+  // Handle confirmation: execute the dangerous query
+  const handleConfirmExecute = useCallback(() => {
+    if (confirmQuery) {
+      executeQuery(confirmQuery.sql);
+      setConfirmQuery(null);
     }
-  }, [queryResult, activeConnectionId]);
+  }, [confirmQuery, executeQuery]);
+
+  const handleCancelExecute = useCallback(() => {
+    setConfirmQuery(null);
+  }, []);
 
   // History click fills editor
   const handleSelectHistoryQuery = useCallback((queryText: string) => {
     setSqlValue(queryText);
   }, []);
+
+  // Execute an inline edit UPDATE directly (already confirmed in the cell edit modal)
+  const handleExecuteUpdate = useCallback(async (sql: string) => {
+    if (!activeConnectionId) return;
+    setSqlValue(sql);
+    await executeQuery(sql);
+  }, [activeConnectionId, executeQuery]);
 
   return (
     <div className="flex flex-col h-full min-h-0 min-w-[1024px] overflow-hidden">
@@ -514,76 +758,114 @@ export default function DatabaseManagementPage() {
 
       {/* Main layout: sidebar + content */}
       <div className="flex flex-1 gap-4 min-h-0">
-        {/* Left sidebar */}
-        <aside className="w-[300px] flex-shrink-0 flex flex-col gap-4 min-h-0 overflow-hidden">
-          {/* Connection List */}
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 flex-shrink-0 max-h-[200px] overflow-y-auto">
-            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Connections
-            </h2>
-            {isLoadingConnections ? (
-              <div className="flex items-center justify-center py-6">
-                <LoadingSpinner />
-                <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
-                  Loading connections...
-                </span>
-              </div>
-            ) : (
-              <ConnectionList
-                connections={connections}
-                onConnect={handleConnect}
-                onDisconnect={handleDisconnect}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            )}
-          </div>
+        {/* Sidebar toggle button (visible when collapsed) */}
+        {sidebarCollapsed && (
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(false)}
+            className="flex-shrink-0 flex flex-col items-center justify-start pt-3 w-8 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            aria-label="Open sidebar"
+            title="Open sidebar"
+          >
+            <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <span className="mt-2 text-[10px] text-gray-500 dark:text-gray-400 writing-mode-vertical" style={{ writingMode: 'vertical-rl' }}>
+              Explorer
+            </span>
+          </button>
+        )}
 
-          {/* Database Tree View - grouped by connection */}
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg flex-1 min-h-0 flex flex-col overflow-hidden">
-            <div className="p-3 pb-2 flex-shrink-0">
+        {/* Left sidebar */}
+        {!sidebarCollapsed && (
+          <aside className="w-[300px] flex-shrink-0 flex flex-col gap-4 min-h-0 overflow-hidden">
+            {/* Collapse button */}
+            <div className="flex items-center justify-between flex-shrink-0">
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Explorer
+              </span>
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(true)}
+                className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 transition-colors"
+                aria-label="Close sidebar"
+                title="Close sidebar"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Connection List */}
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 flex-shrink-0 max-h-[200px] overflow-y-auto">
               <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Database Explorer
+                Connections
               </h2>
-              {/* Search input */}
-              {connections.filter((c) => c.status === 'connected').length > 0 && (
-                <input
-                  type="text"
-                  value={treeSearchQuery}
-                  onChange={(e) => setTreeSearchQuery(e.target.value)}
-                  placeholder="Search databases, tables..."
-                  className="w-full px-2.5 py-1.5 text-xs bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                />
-              )}
-            </div>
-            <div className="flex-1 overflow-y-auto px-3 pb-3">
-              {connections.filter((c) => c.status === 'connected').length > 0 ? (
-                <ConnectionTreeView
-                  connections={connections.filter((c) => c.status === 'connected')}
-                  connectionDatabases={connectionDatabases}
-                  tables={tables}
-                  tableStructure={tableStructure}
-                  accessDenied={accessDenied}
-                  treeLoading={treeLoading}
-                  activeConnectionId={activeConnectionId}
-                  searchQuery={treeSearchQuery}
-                  onExpandConnection={handleExpandConnection}
-                  onExpandDatabase={handleExpandDatabaseForConn}
-                  onExpandTable={handleExpandTableForConn}
-                  onPreviewTable={handlePreviewTable}
-                  onSelectConnection={(connId) => setActiveConnectionId(connId)}
-                />
+              {isLoadingConnections ? (
+                <div className="flex items-center justify-center py-6">
+                  <LoadingSpinner />
+                  <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+                    Loading connections...
+                  </span>
+                </div>
               ) : (
-                <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-                  Connect to a database to browse its schema.
-                </p>
+                <ConnectionList
+                  connections={connections}
+                  onConnect={handleConnect}
+                  onDisconnect={handleDisconnect}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
               )}
             </div>
-          </div>
-        </aside>
+
+            {/* Database Tree View - grouped by connection */}
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="p-3 pb-2 flex-shrink-0">
+                <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Database Explorer
+                </h2>
+                {/* Search input */}
+                {connections.filter((c) => c.status === 'connected').length > 0 && (
+                  <input
+                    type="text"
+                    value={treeSearchQuery}
+                    onChange={(e) => setTreeSearchQuery(e.target.value)}
+                    placeholder="Search databases, tables..."
+                    className="w-full px-2.5 py-1.5 text-xs bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                )}
+              </div>
+              <div className="flex-1 overflow-y-auto px-3 pb-3">
+                {connections.filter((c) => c.status === 'connected').length > 0 ? (
+                  <ConnectionTreeView
+                    connections={connections.filter((c) => c.status === 'connected')}
+                    connectionDatabases={connectionDatabases}
+                    tables={tables}
+                    tableStructure={tableStructure}
+                    accessDenied={accessDenied}
+                    treeLoading={treeLoading}
+                    activeConnectionId={activeConnectionId}
+                    searchQuery={treeSearchQuery}
+                    onExpandConnection={handleExpandConnection}
+                    onExpandDatabase={handleExpandDatabaseForConn}
+                    onExpandTable={handleExpandTableForConn}
+                    onPreviewTable={handlePreviewTable}
+                    onSelectConnection={(connId) => setActiveConnectionId(connId)}
+                  />
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                    Connect to a database to browse its schema.
+                  </p>
+                )}
+              </div>
+            </div>
+          </aside>
+        )}
 
         {/* Main content area */}
-        <div className="flex-1 flex flex-col gap-4 min-w-0 min-h-0">
+        <div className="flex-1 flex flex-col gap-2 min-w-0 min-h-0">
           {/* SQL Editor */}
           <div className="flex-shrink-0">
             <SQLEditor
@@ -591,6 +873,7 @@ export default function DatabaseManagementPage() {
               onChange={setSqlValue}
               onRun={handleRunQuery}
               disabled={!activeConnectionId}
+              schema={editorSchema}
               placeholder={
                 activeConnectionId
                   ? 'Enter SQL query...'
@@ -613,6 +896,11 @@ export default function DatabaseManagementPage() {
                 }`}
               >
                 Results
+                {tableTabs.length > 0 && (
+                  <span className="ml-1.5 px-1.5 py-0.5 text-[10px] bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-full">
+                    {tableTabs.length}
+                  </span>
+                )}
               </button>
               <button
                 type="button"
@@ -628,13 +916,17 @@ export default function DatabaseManagementPage() {
             </div>
 
             {/* Panel content */}
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto min-h-0">
               {activePanel === 'results' && (
-                <QueryResults
-                  result={queryResult}
-                  error={queryError}
-                  isLoading={isExecutingQuery}
-                  onExport={handleExport}
+                <TableTabs
+                  tabs={tableTabs}
+                  activeTabId={activeTabId}
+                  onSelectTab={setActiveTabId}
+                  onCloseTab={handleCloseTab}
+                  onRefreshTab={handleRefreshTab}
+                  onExport={handleExportTab}
+                  onCopyQuery={setSqlValue}
+                  onExecuteUpdate={handleExecuteUpdate}
                 />
               )}
               {activePanel === 'history' && (
@@ -676,6 +968,159 @@ export default function DatabaseManagementPage() {
               onSubmit={handleConnectionFormSubmit}
               onCancel={handleConnectionFormCancel}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Table Action Picker Modal */}
+      {tableActionPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60"
+            onClick={() => setTableActionPicker(null)}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-5">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
+              {tableActionPicker.tableName}
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              {tableActionPicker.dbName}
+            </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleViewTableData}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-gray-200 dark:border-gray-700 transition-colors"
+              >
+                <span className="text-lg">📊</span>
+                <div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">View Data</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">SELECT * FROM table LIMIT 300</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={handleViewTableDDL}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left rounded-md hover:bg-green-50 dark:hover:bg-green-900/20 border border-gray-200 dark:border-gray-700 transition-colors"
+              >
+                <span className="text-lg">🏗️</span>
+                <div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">View DDL</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">SHOW CREATE TABLE</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DDL Popup Modal */}
+      {ddlContent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60"
+            onClick={() => setDdlContent(null)}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl flex flex-col max-h-[80vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  DDL — {ddlContent.tableName}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">CREATE TABLE statement</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyDDL}
+                  disabled={ddlLoading || !ddlContent.ddl}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 rounded transition-colors"
+                >
+                  Copy DDL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDdlContent(null)}
+                  className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400"
+                  aria-label="Close"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            {/* Content */}
+            <div className="flex-1 overflow-auto p-5">
+              {ddlLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <svg className="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">Loading DDL...</span>
+                </div>
+              ) : (
+                <pre className="text-xs font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-4 rounded-md border border-gray-200 dark:border-gray-700 overflow-auto">
+                  {ddlContent.ddl}
+                </pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dangerous Query Confirmation Modal */}
+      {confirmQuery && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60"
+            onClick={handleCancelExecute}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/30">
+                <svg className="w-5 h-5 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Confirm Execution
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  This query will modify data in the database.
+                </p>
+              </div>
+            </div>
+            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md overflow-auto max-h-[150px]">
+              <pre className="text-xs text-gray-800 dark:text-gray-200 font-mono whitespace-pre-wrap break-all">
+                {confirmQuery.sql}
+              </pre>
+            </div>
+            <p className="text-sm text-orange-700 dark:text-orange-300 mb-4">
+              ⚠️ Are you sure you want to execute this query? This action may not be reversible.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancelExecute}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmExecute}
+                className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md transition-colors"
+              >
+                Execute
+              </button>
+            </div>
           </div>
         </div>
       )}
