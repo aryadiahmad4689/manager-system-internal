@@ -124,6 +124,9 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
             if (typed.startsWith('cd ')) {
               const dir = typed.slice(3).trim().replace(/["']/g, '');
               if (dir && dir !== '-') {
+                // Don't save from input buffer — prompt detection handles it correctly
+                // (input buffer is unreliable due to Tab autocomplete)
+                console.log(`[Terminal:${vmId}] cd command entered:`, dir, '— prompt detection will save full path');
                 // Re-check git branch after cd
                 if (gitCheckTimerRef.current) {
                   clearTimeout(gitCheckTimerRef.current);
@@ -167,6 +170,7 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
 
     socket.on('connect', () => {
       setConnectionState('connected');
+      console.log(`[Terminal:${vmId}] Socket connected`);
 
       // Get current terminal size and send with open request
       let initialSize = { cols: 80, rows: 24 };
@@ -183,6 +187,8 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
 
       // After shell is ready, cd to last known directory if we have one
       const savedDir = lastDirRef.current;
+      console.log(`[Terminal:${vmId}] Saved directory from localStorage:`, savedDir || '(none)');
+
       if (savedDir) {
         // Wait for the first prompt to appear (indicates shell is ready)
         // then send cd + clear so the terminal looks clean
@@ -192,6 +198,7 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
           if (!prompted && (data.includes('$') || data.includes('#'))) {
             prompted = true;
             socket.off('terminal:output', promptHandler);
+            console.log(`[Terminal:${vmId}] Prompt detected, sending: cd ${savedDir} && clear`);
             // Small delay to ensure prompt is fully rendered
             setTimeout(() => {
               socket.emit('terminal:input', `cd ${savedDir} && clear\n`);
@@ -203,6 +210,7 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
         setTimeout(() => {
           if (!prompted) {
             socket.off('terminal:output', promptHandler);
+            console.log(`[Terminal:${vmId}] No prompt detected after 5s, forcing: cd ${savedDir} && clear`);
             socket.emit('terminal:input', `cd ${savedDir} && clear\n`);
           }
         }, 5000);
@@ -229,10 +237,12 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
 
       // Auto-load directory listing for file browser after shell is ready
       setTimeout(() => {
+        // Use saved directory from localStorage, or let server use home dir
         const cwd = lastDirRef.current || undefined;
+        console.log(`[Terminal:${vmId}] Loading file browser at:`, cwd || '(home)');
         socket.emit('terminal:list-logs', vmId, cwd);
         setLoadingLogs(true);
-      }, 2500);
+      }, savedDir ? 3500 : 2500); // Wait longer if we need to cd first
     });
 
     socket.on('terminal:output', (data: string) => {
@@ -241,15 +251,37 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
       }
 
       // Parse prompt to detect current working directory
-      // Common prompt formats: user@host:path$ or user@host:path#
-      // Example: administrator@172:~/AppGolang/vikendi-go$
-      const promptMatch = data.match(/[@\w.-]+:([~\/][^\$#\n\r\x1b]*?)[\$#]\s*$/m);
-      if (promptMatch) {
-        const detectedPath = promptMatch[1].trim();
-        if (detectedPath && detectedPath !== lastDirRef.current) {
-          lastDirRef.current = detectedPath;
-          try { localStorage.setItem(`terminal-lastdir-${vmId}`, detectedPath); } catch {}
-          cwdDetectedRef.current = true;
+      // Strip ANSI escape codes first for reliable matching
+      const cleanData = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
+
+      // Log raw data for debugging (only short chunks that might contain prompts)
+      if (cleanData.includes('$') || cleanData.includes('#')) {
+        console.log(`[Terminal:${vmId}] clean prompt:`, JSON.stringify(cleanData.slice(-100)));
+      }
+
+      // Common prompt formats:
+      // user@host:path$ or user@host:path#
+      // administrator@172:~/AppGolang/beedle-epay$
+      const promptPatterns = [
+        /[@\w.-]+:([~\/][^\$#\n\r]*?)[\$#]\s*$/m,
+        /\[?[\w.-]+@[\w.-]+[\s:]+([~\/][^\]$#\n\r]*?)\]?[\$#]\s*$/m,
+        /:([~\/][^\$#\n\r]*?)[\$#]\s*$/m,
+      ];
+      for (const pattern of promptPatterns) {
+        const promptMatch = cleanData.match(pattern);
+        if (promptMatch) {
+          const detectedPath = promptMatch[1].trim();
+          if (detectedPath && detectedPath !== lastDirRef.current) {
+            lastDirRef.current = detectedPath;
+            try { localStorage.setItem(`terminal-lastdir-${vmId}`, detectedPath); } catch {}
+            cwdDetectedRef.current = true;
+            console.log(`[Terminal:${vmId}] Prompt path detected, saved:`, detectedPath);
+            // Auto-refresh file browser to match current directory
+            if (socketRef.current?.connected) {
+              socketRef.current.emit('terminal:list-logs', vmId, detectedPath);
+            }
+          }
+          break;
         }
       }
     });
@@ -282,10 +314,7 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
       setDirEntries(data.entries);
       setCurrentDir(data.directory);
       setLoadingLogs(false);
-      // Track directory for reconnect
-      if (data.directory) {
-        lastDirRef.current = data.directory;
-      }
+      // Don't overwrite lastDirRef here — prompt detection is the source of truth for cd path
     });
 
     // Listen for git info response
