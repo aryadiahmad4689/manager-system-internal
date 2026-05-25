@@ -131,9 +131,11 @@ export function registerTerminalHandlers(socket: AuthenticatedSocket): void {
       }
 
       // Fast ls with markers to filter out banner
+      // Use eval to expand ~ properly, fallback to direct cd
+      const cdCmd = dir.startsWith('~') ? `eval cd ${dir}` : `cd "${dir}"`;
       const output = await sshManager.executeCommand(
         vmId,
-        `echo ${marker} && cd "${dir}" 2>/dev/null && pwd && echo "---" && ls -1tp 2>/dev/null && echo ${endMarker}`
+        `echo ${marker} && ${cdCmd} 2>/dev/null && pwd && echo "---" && ls -1tp 2>/dev/null && echo ${endMarker}`
       );
 
       // Extract content between markers
@@ -145,7 +147,11 @@ export function registerTerminalHandlers(socket: AuthenticatedSocket): void {
 
       const lines = cleanOutput.split('\n');
       // First line is the resolved absolute path (from pwd)
-      const resolvedDir = lines[0] || dir;
+      let resolvedDir = lines[0]?.trim() || dir || '/';
+      // Validate it looks like a path (starts with / or ~)
+      if (!resolvedDir.startsWith('/') && !resolvedDir.startsWith('~')) {
+        resolvedDir = dir || '/';
+      }
       // Find separator
       const sepIdx = lines.indexOf('---');
       const fileLines = sepIdx >= 0 ? lines.slice(sepIdx + 1) : lines.slice(1);

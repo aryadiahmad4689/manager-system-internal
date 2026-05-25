@@ -70,9 +70,8 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
     setShowSearchBar(prev => {
       const next = !prev;
       if (next && connectionState === 'connected') {
-        // Load directory listing: use cwd if known, otherwise default (home)
-        const cwd = lastDirRef.current || undefined;
-        // Only reload if no entries yet, or if cwd changed from what's displayed
+        // Load directory listing from current detected path (prompt-based)
+        const cwd = currentDir || lastDirRef.current || undefined;
         if (dirEntries.length === 0 || (cwd && cwd !== currentDir)) {
           setTimeout(() => listDirectory(cwd), 100);
         }
@@ -237,12 +236,12 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
 
       // Auto-load directory listing for file browser after shell is ready
       setTimeout(() => {
-        // Use saved directory from localStorage, or let server use home dir
+        // Use prompt-detected path (lastDirRef gets updated by prompt detection)
         const cwd = lastDirRef.current || undefined;
         console.log(`[Terminal:${vmId}] Loading file browser at:`, cwd || '(home)');
         socket.emit('terminal:list-logs', vmId, cwd);
         setLoadingLogs(true);
-      }, savedDir ? 3500 : 2500); // Wait longer if we need to cd first
+      }, savedDir ? 3500 : 2000);
     });
 
     socket.on('terminal:output', (data: string) => {
