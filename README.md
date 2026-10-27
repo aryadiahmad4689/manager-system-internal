@@ -198,6 +198,13 @@ npm run db:seed
 
 ---
 
-## 📄 Lisensi & Hak Cipta
+## 📄 Lisensi & Ketentuan Penggunaan
 
-Internal Project — Hak cipta dilindungi undang-undang. Dibuat untuk kebutuhan sistem manajemen internal dan monitoring infrastruktur.
+Proyek ini dirilis di bawah lisensi **Custom Non-Commercial & No-Derivatives (CC BY-NC-ND 4.0 / Setara)**:
+
+- ✅ **Bebas Digunakan**: Terbuka untuk umum digunakan sebagai referensi, pembelajaran, atau penggunaan personal/internal tanpa biaya.
+- ❌ **Dilarang Diperjualbelikan (Non-Commercial)**: Dilarang keras menjual, memonetisasi, atau mengomersialkan proyek ini, baik sebagian maupun secara keseluruhan.
+- ❌ **Dilarang Memodifikasi / Mengedit (No Derivatives)**: Dilarang mengubah, mengedit, merekayasa ulang, atau membuat karya turunan dari proyek ini untuk tujuan distribusi ulang tanpa izin tertulis dari pemilik hak cipta.
+
+Hak Cipta © 2026 **Ariadi Ahmad (SilverBullet)**. Seluruh hak cipta dilindungi undang-undang.
+
