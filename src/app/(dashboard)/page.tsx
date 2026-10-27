@@ -15,6 +15,13 @@ const LogViewer = dynamic(() => import('@/components/LogViewer'), {
   ssr: false,
 });
 
+// Dynamically import ServicesModal to avoid SSR issues
+const ServicesModal = dynamic(() => import('@/components/ServicesModal'), {
+  ssr: false,
+});
+
+import VMResourceBar from '@/components/VMResourceBar';
+
 interface VM {
   id: string;
   label: string;
@@ -69,7 +76,7 @@ function StatusIndicator({ status }: { status: 'online' | 'offline' | 'unreachab
   );
 }
 
-function VMCard({ vm, onConnect, onEdit, onDelete, onNotes }: { vm: VMWithStatus; onConnect: (vm: VMWithStatus) => void; onEdit: (vm: VMWithStatus) => void; onDelete: (vm: VMWithStatus) => void; onNotes: (vm: VMWithStatus) => void }) {
+function VMCard({ vm, onConnect, onEdit, onDelete, onNotes, onServices }: { vm: VMWithStatus; onConnect: (vm: VMWithStatus) => void; onEdit: (vm: VMWithStatus) => void; onDelete: (vm: VMWithStatus) => void; onNotes: (vm: VMWithStatus) => void; onServices: (vm: VMWithStatus) => void }) {
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
       <div className="flex items-start justify-between mb-3">
@@ -92,6 +99,9 @@ function VMCard({ vm, onConnect, onEdit, onDelete, onNotes }: { vm: VMWithStatus
         </p>
       </div>
 
+      {/* VM Resource Monitoring Bar */}
+      <VMResourceBar vmId={vm.id} isOnline={vm.status === 'online'} />
+
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           onClick={() => onConnect(vm)}
@@ -102,6 +112,16 @@ function VMCard({ vm, onConnect, onEdit, onDelete, onNotes }: { vm: VMWithStatus
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
           Connect
+        </button>
+        <button
+          onClick={() => onServices(vm)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-md transition-colors"
+          aria-label={`Services for ${vm.label}`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+          </svg>
+          Services
         </button>
         <button
           onClick={() => onNotes(vm)}
@@ -449,6 +469,7 @@ export default function DashboardPage() {
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
   const [activeTerminalTabId, setActiveTerminalTabId] = useState<string | null>(null);
   const [logViewerVm, setLogViewerVm] = useState<VMWithStatus | null>(null);
+  const [servicesVm, setServicesVm] = useState<VMWithStatus | null>(null);
   const [editVm, setEditVm] = useState<VMWithStatus | null>(null);
   const [deleteVm, setDeleteVm] = useState<VMWithStatus | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -511,12 +532,21 @@ export default function DashboardPage() {
     });
   }, [vms, statusMap]);
 
-  const handleConnect = useCallback((vm: VMWithStatus) => {
+  const handleConnect = useCallback((vm: VMWithStatus, initialCommand?: string) => {
     // Check if a tab for this VM already exists
     const existingTab = terminalTabs.find(tab => tab.vmId === vm.id);
     if (existingTab) {
       // Tab already exists, activate it
       setActiveTerminalTabId(existingTab.id);
+      if (initialCommand) {
+        setTerminalTabs(prev =>
+          prev.map(tab =>
+            tab.id === existingTab.id
+              ? { ...tab, pendingCommand: { command: initialCommand, timestamp: Date.now() } }
+              : tab
+          )
+        );
+      }
       return;
     }
 
@@ -525,6 +555,7 @@ export default function DashboardPage() {
       id: `${vm.id}-${Date.now()}`,
       vmId: vm.id,
       vmLabel: vm.label,
+      pendingCommand: initialCommand ? { command: initialCommand, timestamp: Date.now() } : undefined,
     };
 
     setTerminalTabs(prev => [...prev, newTab]);
@@ -553,6 +584,14 @@ export default function DashboardPage() {
 
   const handleCloseLogViewer = useCallback(() => {
     setLogViewerVm(null);
+  }, []);
+
+  const handleOpenServices = useCallback((vm: VMWithStatus) => {
+    setServicesVm(vm);
+  }, []);
+
+  const handleCloseServices = useCallback(() => {
+    setServicesVm(null);
   }, []);
 
   const handleEdit = useCallback((vm: VMWithStatus) => {
@@ -700,7 +739,15 @@ export default function DashboardPage() {
         {!isLoading && vms.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
             {vmsWithLiveStatus.map((vm) => (
-              <VMCard key={vm.id} vm={vm} onConnect={handleConnect} onEdit={handleEdit} onDelete={handleDelete} onNotes={handleOpenNotes} />
+              <VMCard
+                key={vm.id}
+                vm={vm}
+                onConnect={handleConnect}
+                onServices={handleOpenServices}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onNotes={handleOpenNotes}
+              />
             ))}
           </div>
         )}
@@ -768,6 +815,25 @@ export default function DashboardPage() {
             />
           </div>
         </div>
+      )}
+
+      {/* Services Modal */}
+      {servicesVm && (
+        <ServicesModal
+          vmId={servicesVm.id}
+          vmLabel={servicesVm.label}
+          vmHost={servicesVm.host}
+          onClose={handleCloseServices}
+          onOpenTerminal={(cmd) => {
+            handleConnect(servicesVm, cmd);
+            handleCloseServices();
+            if (typeof window !== 'undefined') {
+              setTimeout(() => {
+                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+              }, 100);
+            }
+          }}
+        />
       )}
 
       {/* Add VM Modal */}

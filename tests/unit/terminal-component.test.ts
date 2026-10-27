@@ -136,6 +136,22 @@ describe('Terminal tab management logic', () => {
     expect(filtered.find(t => t.id === 'vm-2-1001')).toBeUndefined();
   });
 
+  it('should support pendingCommand when activating an existing tab', () => {
+    let tabs: any[] = [
+      { id: 'vm-1-1000', vmId: 'vm-1', vmLabel: 'Test VM' },
+    ];
+
+    const initialCommand = 'cd "/home/administrator/AppGolang-V2/paradise-entertainment-v2"';
+    tabs = tabs.map(tab =>
+      tab.vmId === 'vm-1'
+        ? { ...tab, pendingCommand: { command: initialCommand, timestamp: Date.now() } }
+        : tab
+    );
+
+    expect(tabs[0].pendingCommand).toBeDefined();
+    expect(tabs[0].pendingCommand.command).toBe(initialCommand);
+  });
+
   it('should switch active tab when closing the active one', () => {
     const tabs: TerminalTab[] = [
       { id: 'vm-1-1000', vmId: 'vm-1', vmLabel: 'VM 1' },

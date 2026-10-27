@@ -1,19 +1,47 @@
-# VM Login Dashboard
+# 🖥️ VM Login Dashboard
 
-Dashboard untuk monitoring dan manajemen Virtual Machine (VM) melalui SSH.
+Dashboard modern dan komprehensif untuk monitoring, manajemen Virtual Machine (VM), akses Web SSH Terminal interaktif, serta Multi-Database Query Console.
 
-## Prasyarat
+---
 
-- Node.js >= 18
-- npm
+## 📌 Fitur Utama
 
-## Instalasi
+- ⚡ **VM Monitoring & Status Tracking** — Pantau ketersediaan VM (online, offline, unreachable) secara real-time.
+- 💻 **Web-Based SSH Terminal** — Akses konsol SSH langsung dari browser bertenaga **xterm.js** dan **SSH2**.
+- 📡 **Real-Time Log Streaming** — Streaming log server dan aktivitas terminal berbasis **Socket.IO**.
+- 🗄️ **Multi-Database Query Console** — Query editor interaktif dengan **CodeMirror** yang mendukung **SQLite**, **PostgreSQL**, dan **MySQL**.
+- 🔐 **Keamanan Tinggi & Enkripsi Data** — Kredensial VM dienkripsi menggunakan algoritma **AES-256**, serta sesi diamankan dengan **NextAuth.js (JWT)**.
+- 🤖 **AI Provider Integration** — Konfigurasi provider AI terintegrasi untuk bantuan analisis sistem.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Framework**: [Next.js 14](https://nextjs.org/) (App Router, React 18, TypeScript)
+- **Styling**: Tailwind CSS
+- **Authentication**: NextAuth.js (JWT & Credentials Provider)
+- **Database**: Better-SQLite3
+- **SSH & Terminal**: ssh2, @xterm/xterm, @xterm/addon-fit
+- **Real-Time Communication**: Socket.IO
+- **Database Drivers**: pg (PostgreSQL), mysql2 (MySQL), better-sqlite3 (SQLite)
+- **Testing**: Vitest, React Testing Library, Fast-Check
+
+---
+
+## 📋 Prasyarat
+
+- **Node.js** >= 18.x
+- **npm** atau package manager kompatibel
+
+---
+
+## 🚀 Panduan Instalasi & Menjalankan
 
 ### 1. Clone & Install Dependencies
 
 ```bash
 git clone <repo-url>
-cd vm-login-dashboard
+cd project-vm
 npm install
 ```
 
@@ -25,74 +53,86 @@ Salin file `.env.example` menjadi `.env.local` dan sesuaikan nilainya:
 cp .env.example .env.local
 ```
 
-Isi variabel berikut di `.env.local`:
+Pengaturan variabel pada `.env.local`:
 
-| Variabel | Deskripsi |
-|----------|-----------|
-| `NEXTAUTH_URL` | URL aplikasi (default: `http://localhost:3000`) |
-| `NEXTAUTH_SECRET` | Secret key untuk NextAuth.js (generate random string) |
-| `ENCRYPTION_KEY` | Key enkripsi AES-256 untuk credential VM (64 karakter hex) |
-| `DATABASE_PATH` | Path file database SQLite (default: `./data/dashboard.db`) |
+| Variabel | Deskripsi | Default / Rekomendasi |
+|----------|-----------|-----------------------|
+| `NEXTAUTH_URL` | URL aplikasi | `http://localhost:3000` (atau port server yang digunakan) |
+| `NEXTAUTH_SECRET` | Secret key untuk enkripsi sesi NextAuth.js | Random string aman |
+| `ENCRYPTION_KEY` | Key enkripsi AES-256 untuk kredensial VM | String hex 64 karakter (32 bytes) |
+| `DATABASE_PATH` | Lokasi file database SQLite | `./data/dashboard.db` |
+| `PORT` | Port server (opsional) | `3300` |
 
-**Generate ENCRYPTION_KEY:**
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
+> 💡 **Generate ENCRYPTION_KEY & NEXTAUTH_SECRET:**
+> ```bash
+> # ENCRYPTION_KEY (32 bytes hex)
+> node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+> 
+> # NEXTAUTH_SECRET
+> node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+> ```
 
 ### 3. Setup Database & Seed
 
-Jalankan seed untuk membuat database, tabel, user admin default, dan test VM:
+Jalankan skrip seed untuk membuat skema database, tabel, akun admin awal, dan data pengujian:
 
 ```bash
 npm run db:seed
 ```
 
-Seed akan membuat:
-- **User admin** — username: `admin`, password: `admin123`
-- **Test VM** — sesuai konfigurasi di `src/lib/db/seed.ts`
+**Kredensial Default Seed:**
+- **Username**: `admin`
+- **Password**: `admin123`
 
-> Seed aman dijalankan berulang kali. Jika data sudah ada, akan di-skip.
+*(Catatan: Script seed aman dijalankan berulang kali. Data yang sudah ada tidak akan diduplikasi).*
 
-### 4. Jalankan Aplikasi
+### 4. Menjalankan Aplikasi
 
+Aplikasi dapat dijalankan melalui dua opsi:
+
+#### Opsi A: Menggunakan Custom Server (Next.js + Socket.IO Terintegrasi)
 ```bash
-# Terminal 1 — Next.js frontend
+npm run dev:server
+```
+Server akan berjalan di `http://localhost:3300` (atau sesuai konfigurasi `PORT`), meng-handle Next.js dan endpoint `/api/socketio` untuk koneksi terminal SSH & log streaming.
+
+#### Opsi B: Multi-Terminal (Dev Mode Terpisah)
+```bash
+# Terminal 1 — Next.js dev server
 npm run dev
 
-# Terminal 2 — Socket server (untuk terminal & log streaming)
+# Terminal 2 — Socket server
 npm run dev:server
 ```
 
-Buka `http://localhost:3000` dan login dengan credential admin.
+Buka browser di `http://localhost:3000` (atau port yang aktif) dan login dengan akun admin.
 
 ---
 
-## Menghapus VM dari Seed
+## ⚙️ Manajemen Data VM
 
-Jika ingin menghapus VM yang dibuat oleh seed dari database, bisa dilakukan dengan beberapa cara:
+### Menghapus VM dari Seed
 
-### Opsi 1: Hapus via SQLite CLI
+Jika Anda ingin membersihkan atau menghapus data test VM yang dibuat oleh seed:
 
+#### Opsi 1: Menggunakan SQLite CLI
 ```bash
-# Buka database
+# Buka database SQLite
 sqlite3 data/dashboard.db
 
-# Lihat VM yang ada
+# Cek daftar VM
 SELECT id, label, host, username FROM vms;
 
-# Hapus VM berdasarkan host (vm_status akan terhapus otomatis karena ON DELETE CASCADE)
+# Hapus VM berdasarkan host (relasi vm_status akan terhapus otomatis via CASCADE)
 DELETE FROM vms WHERE host = '<VM_HOST>' AND username = '<VM_USERNAME>';
 
-# Verifikasi
+# Verifikasi & keluar
 SELECT * FROM vms;
 .quit
 ```
 
-### Opsi 2: Hapus via Script Node.js
-
+#### Opsi 2: Menggunakan Script Node.js
 Buat file `scripts/remove-vm.ts`:
-
 ```typescript
 import Database from 'better-sqlite3';
 import path from 'path';
@@ -101,7 +141,6 @@ const dbPath = process.env.DATABASE_PATH || path.resolve(process.cwd(), 'data', 
 const db = new Database(dbPath);
 db.pragma('foreign_keys = ON');
 
-// Hapus test VM dari seed
 const result = db.prepare(
   "DELETE FROM vms WHERE host = ? AND username = ?"
 ).run('<VM_HOST>', '<VM_USERNAME>');
@@ -109,46 +148,56 @@ const result = db.prepare(
 console.log(`Deleted ${result.changes} VM(s).`);
 db.close();
 ```
-
-Jalankan:
-
+Jalankan script:
 ```bash
 npx tsx scripts/remove-vm.ts
 ```
 
-### Opsi 3: Reset Database (Hapus Semua Data)
-
-Jika ingin reset total dan seed ulang:
-
+#### Opsi 3: Reset Total Database
 ```bash
-# Hapus file database
+# Hapus file database SQLite
 rm -f data/dashboard.db data/dashboard.db-shm data/dashboard.db-wal
 
-# Seed ulang
+# Inisialisasi ulang
 npm run db:seed
 ```
 
 ---
 
-## Struktur Database
+## 🗄️ Skema Database
 
 | Tabel | Deskripsi |
 |-------|-----------|
-| `users` | User dashboard (admin) |
-| `vms` | Daftar VM yang terdaftar |
-| `vm_status` | Status terakhir tiap VM (online/offline/unreachable) |
-| `sessions` | Tracking session user |
-| `ai_settings` | Konfigurasi AI provider |
+| `users` | Data akun pengguna / administrator dashboard |
+| `vms` | Daftar Virtual Machine (kredensial host, port, username, password terenkripsi) |
+| `vm_status` | Status ketersediaan berkala tiap VM (*online*, *offline*, *unreachable*) |
+| `sessions` | Tracking sesi login pengguna |
+| `ai_settings` | Konfigurasi preferensi provider model AI |
 
 ---
 
-## Scripts
+## 📜 Skrip NPM
 
-| Command | Deskripsi |
-|---------|-----------|
-| `npm run dev` | Jalankan Next.js dev server |
-| `npm run dev:server` | Jalankan socket server |
-| `npm run build` | Build production |
-| `npm run db:seed` | Seed database |
-| `npm run test` | Jalankan unit test |
-| `npm run lint` | Jalankan ESLint |
+| Script | Deskripsi |
+|--------|-----------|
+| `npm run dev` | Menjalankan Next.js development server |
+| `npm run dev:server` | Menjalankan custom server Next.js + Socket.IO |
+| `npm run build` | Menjalankan build production Next.js |
+| `npm run start` | Menjalankan aplikasi hasil build production |
+| `npm run db:seed` | Inisialisasi dan seeding database SQLite |
+| `npm run test` | Menjalankan unit test dengan Vitest |
+| `npm run test:watch` | Menjalankan unit test dalam mode watch |
+| `npm run test:coverage` | Menjalankan unit test dengan laporan cakupan (coverage) |
+| `npm run lint` | Menjalankan audit kode dengan ESLint |
+
+---
+
+## 👨‍💻 Penulis / Author
+
+- **Ariadi Ahmad (SilverBullet)**
+
+---
+
+## 📄 Lisensi & Hak Cipta
+
+Internal Project — Hak cipta dilindungi undang-undang. Dibuat untuk kebutuhan sistem manajemen internal dan monitoring infrastruktur.

@@ -7,6 +7,7 @@ export interface TerminalTab {
   id: string;
   vmId: string;
   vmLabel: string;
+  pendingCommand?: { command: string; timestamp: number };
 }
 
 interface TerminalPanelProps {
@@ -98,6 +99,7 @@ export default function TerminalPanel({ tabs, activeTabId: externalActiveTabId, 
             vmLabel={tab.vmLabel}
             isActive={activeTabId === tab.id}
             onClose={() => handleCloseTab(tab.id)}
+            pendingCommand={tab.pendingCommand}
           />
         ))}
       </div>

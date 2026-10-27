@@ -16,11 +16,12 @@ interface TerminalProps {
   onClose: () => void;
   onError?: (message: string) => void;
   onGitBranchChange?: (branch: string | null) => void;
+  pendingCommand?: { command: string; timestamp: number };
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
-export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, onGitBranchChange }: TerminalProps) {
+export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, onGitBranchChange, pendingCommand }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -46,6 +47,25 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
   const gitCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputBufferRef = useRef<string>('');
   const cwdDetectedRef = useRef<boolean>(false);
+  const lastExecutedCmdTimestamp = useRef<number>(0);
+  const pendingCommandRef = useRef(pendingCommand);
+  pendingCommandRef.current = pendingCommand;
+
+  // Execute pending command if terminal is already connected
+  useEffect(() => {
+    if (
+      pendingCommand &&
+      pendingCommand.timestamp > lastExecutedCmdTimestamp.current
+    ) {
+      lastExecutedCmdTimestamp.current = pendingCommand.timestamp;
+      if (connectionState === 'connected' && socketRef.current?.connected) {
+        setTimeout(() => {
+          socketRef.current?.emit('terminal:input', `${pendingCommand.command}\n`);
+          xtermRef.current?.focus();
+        }, 150);
+      }
+    }
+  }, [pendingCommand, connectionState]);
 
   const sendCommand = useCallback((command: string) => {
     if (socketRef.current?.connected) {
@@ -184,23 +204,28 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
 
       socket.emit('terminal:open', vmId, initialSize);
 
-      // After shell is ready, cd to last known directory if we have one
+      // After shell is ready, cd to pending command or last known directory
+      const pendingCmd = pendingCommandRef.current?.command;
       const savedDir = lastDirRef.current;
-      console.log(`[Terminal:${vmId}] Saved directory from localStorage:`, savedDir || '(none)');
+      const cmdToRun = pendingCmd || (savedDir ? `cd ${savedDir} && clear` : null);
 
-      if (savedDir) {
+      if (cmdToRun) {
         // Wait for the first prompt to appear (indicates shell is ready)
-        // then send cd + clear so the terminal looks clean
+        // then send the command so the shell executes it cleanly
         let prompted = false;
         const promptHandler = (data: string) => {
           // Detect prompt: typically ends with $ or # after user@host:path
           if (!prompted && (data.includes('$') || data.includes('#'))) {
             prompted = true;
             socket.off('terminal:output', promptHandler);
-            console.log(`[Terminal:${vmId}] Prompt detected, sending: cd ${savedDir} && clear`);
+            if (pendingCommandRef.current) {
+              lastExecutedCmdTimestamp.current = pendingCommandRef.current.timestamp;
+            }
+            console.log(`[Terminal:${vmId}] Prompt detected, sending: ${cmdToRun}`);
             // Small delay to ensure prompt is fully rendered
             setTimeout(() => {
-              socket.emit('terminal:input', `cd ${savedDir} && clear\n`);
+              socket.emit('terminal:input', `${cmdToRun}\n`);
+              xtermRef.current?.focus();
             }, 200);
           }
         };
@@ -209,8 +234,12 @@ export default function Terminal({ vmId, vmLabel, isActive, onClose, onError, on
         setTimeout(() => {
           if (!prompted) {
             socket.off('terminal:output', promptHandler);
-            console.log(`[Terminal:${vmId}] No prompt detected after 5s, forcing: cd ${savedDir} && clear`);
-            socket.emit('terminal:input', `cd ${savedDir} && clear\n`);
+            if (pendingCommandRef.current) {
+              lastExecutedCmdTimestamp.current = pendingCommandRef.current.timestamp;
+            }
+            console.log(`[Terminal:${vmId}] No prompt detected after 5s, forcing: ${cmdToRun}`);
+            socket.emit('terminal:input', `${cmdToRun}\n`);
+            xtermRef.current?.focus();
           }
         }, 5000);
       }
