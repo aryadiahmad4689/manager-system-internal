@@ -5,6 +5,7 @@ import {
   parseSystemdUnits,
   parseDockerContainers,
   parseWorkers,
+  parseWebRoots,
   mergeServices,
   ServiceDetectorImpl,
   createServiceDetector,
@@ -167,6 +168,33 @@ def987654321|web-api|golang:1.22|Up 5 days|0.0.0.0:8000->80/tcp
     });
   });
 
+  describe('parseWebRoots', () => {
+    it('should parse web document roots like /var/www/html', () => {
+      const rawWeb = `
+html|/var/www/html|15|www-data
+api|/var/www/api|8|ubuntu
+empty|/var/www/empty|0|root
+`;
+      const webServices = parseWebRoots(rawWeb, ['80', '443']);
+      expect(webServices.length).toBe(2);
+
+      const html = webServices.find((s) => s.workingDir === '/var/www/html');
+      expect(html).toBeDefined();
+      expect(html?.name).toBe('html (Web/PHP)');
+      expect(html?.type).toBe('web');
+      expect(html?.ports).toEqual(['80', '443']);
+      expect(html?.user).toBe('www-data');
+      expect(html?.description).toContain('15 item');
+
+      const api = webServices.find((s) => s.workingDir === '/var/www/api');
+      expect(api?.name).toBe('api (Web/PHP)');
+    });
+
+    it('should return empty array for empty input', () => {
+      expect(parseWebRoots('')).toEqual([]);
+    });
+  });
+
   describe('mergeServices', () => {
     it('should merge listening and systemd services with matched info', () => {
       const listening: RunningService[] = [
@@ -215,16 +243,37 @@ def987654321|web-api|golang:1.22|Up 5 days|0.0.0.0:8000->80/tcp
       const mergedCron = merged.find((s) => s.name === 'cron.service');
       expect(mergedCron).toBeDefined();
     });
+
+    it('should include web root services in merged results', () => {
+      const webRoots: RunningService[] = [
+        {
+          id: 'web-html',
+          name: 'html (Web/PHP)',
+          type: 'web',
+          status: 'active',
+          ports: ['80', '443'],
+          workingDir: '/var/www/html',
+        },
+      ];
+
+      const merged = mergeServices([], [], [], [], webRoots);
+      expect(merged.length).toBe(1);
+      expect(merged[0].name).toBe('html (Web/PHP)');
+      expect(merged[0].type).toBe('web');
+      expect(merged[0].workingDir).toBe('/var/www/html');
+    });
   });
 
   describe('ServiceDetectorImpl', () => {
-    it('should execute command and return aggregated services result', async () => {
+    it('should execute command and return aggregated services result including web roots', async () => {
       const mockExecute = vi.fn().mockResolvedValue(`
 ===NET_START===
 tcp LISTEN 0 128 0.0.0.0:8080 0.0.0.0:* users:(("beedle",pid=123,fd=4))
+tcp LISTEN 0 511 0.0.0.0:80 0.0.0.0:* users:(("nginx",pid=456,fd=6))
 ===NET_END===
 ===PID_DETAILS_START===
 123|ubuntu|/home/ubuntu/apps/beedle-epay|/home/ubuntu/apps/beedle-epay/bin/app|/bin/app --port 8080
+456|root|/var/www/html|/usr/sbin/nginx|nginx: master
 ===PID_DETAILS_END===
 ===SYSTEMD_START===
 Id=beedle.service
@@ -239,6 +288,9 @@ ActiveState=active
 ===WORKERS_END===
 ===DOCKER_START===
 ===DOCKER_END===
+===WEB_ROOTS_START===
+html|/var/www/html|12|www-data
+===WEB_ROOTS_END===
 `);
 
       const detector = createServiceDetector({ executeCommand: mockExecute });
@@ -246,15 +298,21 @@ ActiveState=active
 
       expect(mockExecute).toHaveBeenCalledTimes(1);
       expect(result.vmId).toBe('vm-test-1');
-      expect(result.services.length).toBe(1);
+      expect(result.services.length).toBe(3); // beedle, nginx, web-html
 
-      const service = result.services[0];
-      expect(service.name).toBe('beedle');
-      expect(service.ports).toEqual(['8080']);
-      expect(service.workingDir).toBe('/home/ubuntu/apps/beedle-epay');
-      expect(service.execPath).toBe('/home/ubuntu/apps/beedle-epay/bin/app');
-      expect(service.unitFile).toBe('/etc/systemd/system/beedle.service');
-      expect(service.description).toBe('Beedle E-Pay Backend');
+      const webService = result.services.find((s) => s.type === 'web');
+      expect(webService).toBeDefined();
+      expect(webService?.workingDir).toBe('/var/www/html');
+      expect(webService?.name).toBe('html (Web/PHP)');
+      expect(webService?.ports).toContain('80');
+
+      const service = result.services.find((s) => s.name === 'beedle');
+      expect(service).toBeDefined();
+      expect(service?.ports).toEqual(['8080']);
+      expect(service?.workingDir).toBe('/home/ubuntu/apps/beedle-epay');
+      expect(service?.execPath).toBe('/home/ubuntu/apps/beedle-epay/bin/app');
+      expect(service?.unitFile).toBe('/etc/systemd/system/beedle.service');
+      expect(service?.description).toBe('Beedle E-Pay Backend');
       expect(result.scannedAt).toBeDefined();
     });
   });

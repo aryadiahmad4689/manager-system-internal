@@ -3,7 +3,7 @@ import { getSSHManager } from '../ssh/ssh-manager';
 export interface RunningService {
   id: string;
   name: string;
-  type: 'listening' | 'systemd' | 'worker' | 'docker';
+  type: 'listening' | 'systemd' | 'worker' | 'docker' | 'web';
   status: string;
   pid?: number;
   user?: string;
@@ -78,6 +78,29 @@ if command -v docker >/dev/null 2>&1; then
   docker ps --no-trunc --format "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}" 2>/dev/null
 fi
 echo "===DOCKER_END==="
+
+echo "===WEB_ROOTS_START==="
+if [ -d "/var/www" ]; then
+  for d in /var/www/*; do
+    if [ -d "$d" ]; then
+      bname=$(basename "$d")
+      count=$(ls -1A "$d" 2>/dev/null | wc -l | tr -d ' ')
+      owner=$(ls -ld "$d" 2>/dev/null | awk '{print $3}')
+      echo "$bname|$d|$count|$owner"
+    fi
+  done
+  if [ -d "/var/www/html" ]; then
+    for sub in /var/www/html/*; do
+      if [ -d "$sub" ] && [ "$(basename "$sub")" != "lost+found" ]; then
+        subname="html/$(basename "$sub")"
+        subcount=$(ls -1A "$sub" 2>/dev/null | wc -l | tr -d ' ')
+        subowner=$(ls -ld "$sub" 2>/dev/null | awk '{print $3}')
+        echo "$subname|$sub|$subcount|$subowner"
+      fi
+    done
+  fi
+fi
+echo "===WEB_ROOTS_END==="
 `.trim();
 
 interface PidDetail {
@@ -378,13 +401,57 @@ export function parseWorkers(
 }
 
 /**
- * Merges and deduplicates services across listening, systemd, docker, and workers.
+ * Parses Web DocumentRoots (/var/www, /var/www/html, etc.).
+ */
+export function parseWebRoots(
+  rawWeb: string,
+  webServerPorts: string[] = []
+): RunningService[] {
+  const services: RunningService[] = [];
+  if (!rawWeb) return services;
+
+  const lines = rawWeb.split('\n');
+  const seenPaths = new Set<string>();
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split('|');
+    if (parts.length >= 2) {
+      const name = parts[0];
+      const dirPath = parts[1];
+      const count = parts[2] ? parseInt(parts[2], 10) : 0;
+      const owner = parts[3] || 'www-data';
+
+      // Avoid duplicates or completely empty directories
+      if (seenPaths.has(dirPath) || count === 0) continue;
+      seenPaths.add(dirPath);
+
+      services.push({
+        id: `web-${name.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+        name: `${name} (Web/PHP)`,
+        type: 'web',
+        status: 'active',
+        user: owner,
+        ports: webServerPorts,
+        workingDir: dirPath,
+        description: `Web Application / DocumentRoot (${count} item)`,
+      });
+    }
+  }
+
+  return services;
+}
+
+/**
+ * Merges and deduplicates services across listening, systemd, docker, workers, and web roots.
  */
 export function mergeServices(
   listening: RunningService[],
   systemd: RunningService[],
   workers: RunningService[],
-  docker: RunningService[]
+  docker: RunningService[],
+  webRoots: RunningService[] = []
 ): RunningService[] {
   const merged: RunningService[] = [];
   const handledPids = new Set<number>();
@@ -442,6 +509,27 @@ export function mergeServices(
     merged.push(doc);
   }
 
+  // 5. Process Web Roots (/var/www/html, PHP web apps)
+  for (const web of webRoots) {
+    // If no existing service with same path, add it
+    const existingWithSamePath = merged.find(
+      (s) => s.workingDir && s.workingDir === web.workingDir
+    );
+    if (!existingWithSamePath) {
+      merged.push(web);
+    } else {
+      // If web server like nginx/apache2 was found, still add the web app entry so user can browse its code
+      if (
+        existingWithSamePath.type === 'listening' &&
+        (existingWithSamePath.name === 'nginx' ||
+          existingWithSamePath.name === 'apache2' ||
+          existingWithSamePath.name === 'httpd')
+      ) {
+        merged.push(web);
+      }
+    }
+  }
+
   return merged;
 }
 
@@ -460,11 +548,31 @@ export class ServiceDetectorImpl implements ServiceDetector {
     const systemdSection = extractSection(rawOutput, '===SYSTEMD_START===', '===SYSTEMD_END===');
     const workersSection = extractSection(rawOutput, '===WORKERS_START===', '===WORKERS_END===');
     const dockerSection = extractSection(rawOutput, '===DOCKER_START===', '===DOCKER_END===');
+    const webSection = extractSection(rawOutput, '===WEB_ROOTS_START===', '===WEB_ROOTS_END===');
 
     const pidDetails = parsePidDetails(pidSection);
     const listening = parseListeningSockets(netSection, pidDetails);
     const systemd = parseSystemdUnits(systemdSection, pidDetails);
     const docker = parseDockerContainers(dockerSection);
+
+    // Identify ports used by web servers (nginx, apache2, httpd, caddy, lighttpd)
+    const webServerPorts: string[] = [];
+    for (const l of listening) {
+      const lowerName = l.name.toLowerCase();
+      if (
+        lowerName.includes('nginx') ||
+        lowerName.includes('apache') ||
+        lowerName.includes('httpd') ||
+        lowerName.includes('caddy') ||
+        lowerName.includes('lighttpd')
+      ) {
+        for (const p of l.ports) {
+          if (!webServerPorts.includes(p)) webServerPorts.push(p);
+        }
+      }
+    }
+    const portsForWeb = webServerPorts.length > 0 ? webServerPorts : ['80'];
+    const webRoots = parseWebRoots(webSection, portsForWeb);
 
     const existingPids = new Set<number>();
     for (const l of listening) if (l.pid) existingPids.add(l.pid);
@@ -472,7 +580,7 @@ export class ServiceDetectorImpl implements ServiceDetector {
 
     const workers = parseWorkers(workersSection, existingPids);
 
-    const services = mergeServices(listening, systemd, workers, docker);
+    const services = mergeServices(listening, systemd, workers, docker, webRoots);
 
     return {
       vmId,

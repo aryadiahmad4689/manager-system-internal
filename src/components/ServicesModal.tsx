@@ -15,7 +15,7 @@ interface ServicesModalProps {
   onOpenTerminal?: (command?: string) => void;
 }
 
-type FilterType = 'all' | 'listening' | 'systemd' | 'worker' | 'docker';
+type FilterType = 'all' | 'listening' | 'systemd' | 'worker' | 'docker' | 'web';
 
 interface PortTestResult {
   port: number;
@@ -649,7 +649,8 @@ export default function ServicesModal({
     const systemd = services.filter((s) => s.type === 'systemd').length;
     const workers = services.filter((s) => s.type === 'worker').length;
     const docker = services.filter((s) => s.type === 'docker').length;
-    return { total, listening, systemd, workers, docker };
+    const web = services.filter((s) => s.type === 'web').length;
+    return { total, listening, systemd, workers, docker, web };
   }, [services]);
 
   const filteredServices = useMemo(() => {
@@ -838,6 +839,18 @@ export default function ServicesModal({
                 Docker ({counts.docker})
               </button>
             )}
+            {counts.web > 0 && (
+              <button
+                onClick={() => setActiveFilter('web')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
+                  activeFilter === 'web'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900 border border-indigo-200 dark:border-indigo-800'
+                }`}
+              >
+                🌐 Web / PHP ({counts.web})
+              </button>
+            )}
           </div>
         </div>
 
@@ -907,10 +920,12 @@ export default function ServicesModal({
                               ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300'
                               : service.type === 'docker'
                               ? 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300'
+                              : service.type === 'web'
+                              ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300'
                               : 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
                           }`}
                         >
-                          {service.type}
+                          {service.type === 'web' ? '🌐 Web / PHP' : service.type}
                         </span>
 
                         {/* Feature 4: Port Badges with Ping / Curl Tester */}

@@ -108,6 +108,15 @@ describe('ServicesModal Component & Logic', () => {
         workingDir: '/opt/worker',
         execPath: '/usr/bin/python3',
       },
+      {
+        id: 'web-html',
+        name: 'html (Web/PHP)',
+        type: 'web',
+        status: 'active',
+        ports: ['80', '443'],
+        workingDir: '/var/www/html',
+        description: 'Web Application / DocumentRoot',
+      },
     ];
 
     function filterServices(services: RunningService[], filter: string, query: string) {
@@ -128,28 +137,32 @@ describe('ServicesModal Component & Logic', () => {
       });
     }
 
-    it('should correctly count services by type', () => {
+    it('should correctly count services by type including web', () => {
       const total = mockServices.length;
       const listening = mockServices.filter((s) => s.type === 'listening').length;
       const systemd = mockServices.filter((s) => s.type === 'systemd').length;
       const workers = mockServices.filter((s) => s.type === 'worker').length;
+      const web = mockServices.filter((s) => s.type === 'web').length;
 
-      expect(total).toBe(3);
+      expect(total).toBe(4);
       expect(listening).toBe(1);
       expect(systemd).toBe(1);
       expect(workers).toBe(1);
+      expect(web).toBe(1);
     });
 
-    it('should filter by active tab', () => {
-      expect(filterServices(mockServices, 'all', '').length).toBe(3);
+    it('should filter by active tab including web', () => {
+      expect(filterServices(mockServices, 'all', '').length).toBe(4);
       expect(filterServices(mockServices, 'listening', '').length).toBe(1);
       expect(filterServices(mockServices, 'systemd', '').length).toBe(1);
       expect(filterServices(mockServices, 'worker', '').length).toBe(1);
+      expect(filterServices(mockServices, 'web', '').length).toBe(1);
     });
 
     it('should search by name, port, or working directory', () => {
       expect(filterServices(mockServices, 'all', 'beedle').length).toBe(1);
       expect(filterServices(mockServices, 'all', ':8080').length).toBe(1);
+      expect(filterServices(mockServices, 'all', '/var/www/html').length).toBe(1);
       expect(filterServices(mockServices, 'all', '/var/spool').length).toBe(1);
       expect(filterServices(mockServices, 'all', 'cron').length).toBe(1);
       expect(filterServices(mockServices, 'all', 'nonexistent').length).toBe(0);
