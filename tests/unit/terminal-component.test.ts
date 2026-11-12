@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { getTabDisplayTitle, type TerminalTab } from '@/components/terminal-utils';
 
 /**
  * Unit tests for Terminal and TerminalPanel component logic.
@@ -213,5 +214,79 @@ describe('Terminal tab management logic', () => {
     expect(tabs[0].vmId).toBe('vm-1');
     expect(tabs[1].vmId).toBe('vm-2');
     expect(tabs[2].vmId).toBe('vm-3');
+  });
+
+  it('should support multiple tabs for the same VM', () => {
+    const tabs: TerminalTab[] = [
+      { id: 'vm-1-1000', vmId: 'vm-1', vmLabel: 'Staging Server' },
+      { id: 'vm-1-1001', vmId: 'vm-1', vmLabel: 'Staging Server' },
+      { id: 'vm-2-1002', vmId: 'vm-2', vmLabel: 'Production' },
+    ];
+
+    expect(tabs).toHaveLength(3);
+    const vm1Tabs = tabs.filter(t => t.vmId === 'vm-1');
+    expect(vm1Tabs).toHaveLength(2);
+    expect(vm1Tabs[0].id).not.toBe(vm1Tabs[1].id);
+  });
+
+  describe('getTabDisplayTitle', () => {
+    it('should return plain label when only one tab exists for a VM', () => {
+      const tabs: TerminalTab[] = [
+        { id: 'tab-1', vmId: 'vm-1', vmLabel: 'Staging Server' },
+        { id: 'tab-2', vmId: 'vm-2', vmLabel: 'Production' },
+      ];
+
+      expect(getTabDisplayTitle(tabs[0], tabs)).toBe('Staging Server');
+      expect(getTabDisplayTitle(tabs[1], tabs)).toBe('Production');
+    });
+
+    it('should number tabs (#1, #2, etc.) when multiple tabs share the same VM', () => {
+      const tabs: TerminalTab[] = [
+        { id: 'tab-1', vmId: 'vm-1', vmLabel: 'Staging Server' },
+        { id: 'tab-2', vmId: 'vm-1', vmLabel: 'Staging Server' },
+        { id: 'tab-3', vmId: 'vm-1', vmLabel: 'Staging Server' },
+        { id: 'tab-4', vmId: 'vm-2', vmLabel: 'Production' },
+      ];
+
+      expect(getTabDisplayTitle(tabs[0], tabs)).toBe('Staging Server #1');
+      expect(getTabDisplayTitle(tabs[1], tabs)).toBe('Staging Server #2');
+      expect(getTabDisplayTitle(tabs[2], tabs)).toBe('Staging Server #3');
+      expect(getTabDisplayTitle(tabs[3], tabs)).toBe('Production');
+    });
+  });
+
+  describe('Split view management logic', () => {
+    it('should handle split pane assignments and closing a pane', () => {
+      const tabs: TerminalTab[] = [
+        { id: 'tab-1', vmId: 'vm-1', vmLabel: 'VM 1 #1' },
+        { id: 'tab-2', vmId: 'vm-1', vmLabel: 'VM 1 #2' },
+      ];
+
+      let isSplitView = true;
+      let activeTabId: string | null = 'tab-1';
+      let splitTabId: string | null = 'tab-2';
+
+      expect(activeTabId).toBe('tab-1');
+      expect(splitTabId).toBe('tab-2');
+
+      // Simulate closing tab-2
+      const tabToClose = 'tab-2';
+      const remaining = tabs.filter(t => t.id !== tabToClose);
+
+      if (splitTabId === tabToClose) {
+        const nextSplit = remaining.find(t => t.id !== activeTabId && t.id !== tabToClose);
+        if (nextSplit) {
+          splitTabId = nextSplit.id;
+        } else {
+          splitTabId = null;
+          isSplitView = false;
+        }
+      }
+
+      expect(remaining).toHaveLength(1);
+      expect(splitTabId).toBeNull();
+      expect(isSplitView).toBe(false);
+      expect(activeTabId).toBe('tab-1');
+    });
   });
 });

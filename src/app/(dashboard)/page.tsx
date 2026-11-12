@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import type { TerminalTab } from '@/components/TerminalPanel';
+import { getTabDisplayTitle, type TerminalTab } from '@/components/TerminalPanel';
 import { useVMStatusPolling } from '@/hooks/useVMStatusPolling';
 
 // Dynamically import TerminalPanel to avoid SSR issues with xterm.js
@@ -76,7 +76,25 @@ function StatusIndicator({ status }: { status: 'online' | 'offline' | 'unreachab
   );
 }
 
-function VMCard({ vm, onConnect, onEdit, onDelete, onNotes, onServices }: { vm: VMWithStatus; onConnect: (vm: VMWithStatus) => void; onEdit: (vm: VMWithStatus) => void; onDelete: (vm: VMWithStatus) => void; onNotes: (vm: VMWithStatus) => void; onServices: (vm: VMWithStatus) => void }) {
+function VMCard({
+  vm,
+  activeTabCount = 0,
+  onConnect,
+  onNewTab,
+  onEdit,
+  onDelete,
+  onNotes,
+  onServices,
+}: {
+  vm: VMWithStatus;
+  activeTabCount?: number;
+  onConnect: (vm: VMWithStatus) => void;
+  onNewTab?: (vm: VMWithStatus) => void;
+  onEdit: (vm: VMWithStatus) => void;
+  onDelete: (vm: VMWithStatus) => void;
+  onNotes: (vm: VMWithStatus) => void;
+  onServices: (vm: VMWithStatus) => void;
+}) {
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
       <div className="flex items-start justify-between mb-3">
@@ -111,8 +129,21 @@ function VMCard({ vm, onConnect, onEdit, onDelete, onNotes, onServices }: { vm: 
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
-          Connect
+          {activeTabCount > 0 ? 'Terminal' : 'Connect'}
         </button>
+        {activeTabCount > 0 && onNewTab && (
+          <button
+            onClick={() => onNewTab(vm)}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-300 dark:border-emerald-700 rounded-md transition-colors"
+            title={`Buka tab baru untuk ${vm.label}`}
+            aria-label={`Open new tab for ${vm.label}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            + Tab ({activeTabCount})
+          </button>
+        )}
         <button
           onClick={() => onServices(vm)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-md transition-colors"
@@ -468,11 +499,26 @@ export default function DashboardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
   const [activeTerminalTabId, setActiveTerminalTabId] = useState<string | null>(null);
+  const [isSplitView, setIsSplitView] = useState(false);
+  const [splitTerminalTabId, setSplitTerminalTabId] = useState<string | null>(null);
+  const [focusedPane, setFocusedPane] = useState<'left' | 'right'>('left');
+  const [isFullscreenTerminal, setIsFullscreenTerminal] = useState(false);
   const [logViewerVm, setLogViewerVm] = useState<VMWithStatus | null>(null);
   const [servicesVm, setServicesVm] = useState<VMWithStatus | null>(null);
   const [editVm, setEditVm] = useState<VMWithStatus | null>(null);
   const [deleteVm, setDeleteVm] = useState<VMWithStatus | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Keyboard shortcut: Escape to exit fullscreen terminal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreenTerminal) {
+        setIsFullscreenTerminal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreenTerminal]);
 
   const fetchVMs = useCallback(async () => {
     try {
@@ -532,51 +578,135 @@ export default function DashboardPage() {
     });
   }, [vms, statusMap]);
 
-  const handleConnect = useCallback((vm: VMWithStatus, initialCommand?: string) => {
-    // Check if a tab for this VM already exists
-    const existingTab = terminalTabs.find(tab => tab.vmId === vm.id);
-    if (existingTab) {
-      // Tab already exists, activate it
-      setActiveTerminalTabId(existingTab.id);
-      if (initialCommand) {
-        setTerminalTabs(prev =>
-          prev.map(tab =>
-            tab.id === existingTab.id
-              ? { ...tab, pendingCommand: { command: initialCommand, timestamp: Date.now() } }
-              : tab
-          )
-        );
+  const handleConnect = useCallback((vm: VMWithStatus, initialCommand?: string, forceNewTab?: boolean) => {
+    // If not forcing a new tab, check if a tab for this VM already exists
+    if (!forceNewTab) {
+      const existingTab = terminalTabs.find(tab => tab.vmId === vm.id);
+      if (existingTab) {
+        // Tab already exists, activate it
+        if (isSplitView && focusedPane === 'right') {
+          setSplitTerminalTabId(existingTab.id);
+        } else {
+          setActiveTerminalTabId(existingTab.id);
+        }
+        if (initialCommand) {
+          setTerminalTabs(prev =>
+            prev.map(tab =>
+              tab.id === existingTab.id
+                ? { ...tab, pendingCommand: { command: initialCommand, timestamp: Date.now() } }
+                : tab
+            )
+          );
+        }
+        return;
       }
-      return;
     }
 
-    // Create a new terminal tab
+    // Create a new terminal tab (generates unique ID)
     const newTab: TerminalTab = {
-      id: `${vm.id}-${Date.now()}`,
+      id: `${vm.id}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       vmId: vm.id,
       vmLabel: vm.label,
       pendingCommand: initialCommand ? { command: initialCommand, timestamp: Date.now() } : undefined,
     };
 
     setTerminalTabs(prev => [...prev, newTab]);
-    setActiveTerminalTabId(newTab.id);
-  }, [terminalTabs]);
+    if (isSplitView && focusedPane === 'right') {
+      setSplitTerminalTabId(newTab.id);
+    } else {
+      setActiveTerminalTabId(newTab.id);
+    }
+  }, [terminalTabs, isSplitView, focusedPane]);
+
+  const handleNewTab = useCallback((vm: VMWithStatus) => {
+    handleConnect(vm, undefined, true);
+  }, [handleConnect]);
 
   const handleCloseTab = useCallback((tabId: string) => {
     setTerminalTabs(prev => {
       const remaining = prev.filter(tab => tab.id !== tabId);
-      // If closing the active tab, switch to another
+
+      // If closing the active tab (Left pane)
       if (activeTerminalTabId === tabId) {
         const idx = prev.findIndex(t => t.id === tabId);
-        if (remaining.length > 0) {
-          setActiveTerminalTabId(remaining[Math.min(idx, remaining.length - 1)].id);
-        } else {
-          setActiveTerminalTabId(null);
-        }
+        const nextActive = remaining.find(t => t.id !== splitTerminalTabId) 
+          || remaining[Math.min(idx, Math.max(0, remaining.length - 1))];
+        setActiveTerminalTabId(nextActive ? nextActive.id : null);
       }
+
+      // If closing the split tab (Right pane)
+      if (splitTerminalTabId === tabId) {
+        const nextSplit = remaining.find(t => t.id !== activeTerminalTabId && t.id !== tabId);
+        if (nextSplit) {
+          setSplitTerminalTabId(nextSplit.id);
+        } else {
+          setSplitTerminalTabId(null);
+          setIsSplitView(false);
+        }
+      } else if (remaining.length < 2 && isSplitView) {
+        setIsSplitView(false);
+        setSplitTerminalTabId(null);
+      }
+
       return remaining;
     });
-  }, [activeTerminalTabId]);
+  }, [activeTerminalTabId, splitTerminalTabId, isSplitView]);
+
+  const handleToggleSplit = useCallback(() => {
+    setIsSplitView(prev => {
+      const next = !prev;
+      if (next) {
+        // When activating split view, ensure right pane has a tab
+        if (!splitTerminalTabId || splitTerminalTabId === activeTerminalTabId) {
+          const otherTab = terminalTabs.find(t => t.id !== activeTerminalTabId);
+          if (otherTab) {
+            setSplitTerminalTabId(otherTab.id);
+          } else if (activeTerminalTabId) {
+            // Only 1 tab exists: automatically create Tab #2 for the same VM!
+            const currentTab = terminalTabs.find(t => t.id === activeTerminalTabId);
+            if (currentTab) {
+              const vm = vmsWithLiveStatus.find(v => v.id === currentTab.vmId);
+              if (vm) {
+                const newTab: TerminalTab = {
+                  id: `${vm.id}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                  vmId: vm.id,
+                  vmLabel: vm.label,
+                };
+                setTerminalTabs(prevTabs => [...prevTabs, newTab]);
+                setSplitTerminalTabId(newTab.id);
+              }
+            }
+          }
+        }
+      }
+      return next;
+    });
+  }, [splitTerminalTabId, activeTerminalTabId, terminalTabs, vmsWithLiveStatus]);
+
+  const handleSelectTabForPane = useCallback((pane: 'left' | 'right', tabId: string) => {
+    if (pane === 'left') {
+      setActiveTerminalTabId(tabId);
+    } else {
+      setSplitTerminalTabId(tabId);
+    }
+  }, []);
+
+  const handleAddNewTabFromBar = useCallback(() => {
+    if (activeTerminalTabId) {
+      const currentTab = terminalTabs.find(t => t.id === activeTerminalTabId);
+      if (currentTab) {
+        const vm = vmsWithLiveStatus.find(v => v.id === currentTab.vmId);
+        if (vm) {
+          handleNewTab(vm);
+          return;
+        }
+      }
+    }
+    const firstVm = vmsWithLiveStatus.find(v => v.status === 'online') || vmsWithLiveStatus[0];
+    if (firstVm) {
+      handleNewTab(firstVm);
+    }
+  }, [activeTerminalTabId, terminalTabs, vmsWithLiveStatus, handleNewTab]);
 
   const handleViewLogs = useCallback((vm: VMWithStatus) => {
     setLogViewerVm(vm);
@@ -742,7 +872,9 @@ export default function DashboardPage() {
               <VMCard
                 key={vm.id}
                 vm={vm}
+                activeTabCount={terminalTabs.filter(t => t.vmId === vm.id).length}
                 onConnect={handleConnect}
+                onNewTab={handleNewTab}
                 onServices={handleOpenServices}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
@@ -755,45 +887,158 @@ export default function DashboardPage() {
 
       {/* Terminal panel */}
       {terminalTabs.length > 0 && (
-        <div className="flex-1 min-h-[250px] md:min-h-[300px] mt-4 flex flex-col">
-          {/* VM Terminal Tabs - always visible */}
-          <div className="flex items-center bg-gray-800 border border-gray-700 rounded-t-lg overflow-x-auto flex-shrink-0">
-            {terminalTabs.map((tab) => (
-              <div
-                key={tab.id}
-                onClick={() => setActiveTerminalTabId(tab.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-r border-gray-700 min-w-0 transition-colors ${
-                  activeTerminalTabId === tab.id
-                    ? 'bg-gray-900 text-white border-b-2 border-b-green-500'
+        <div
+          className={`${
+            isFullscreenTerminal
+              ? 'fixed inset-0 z-50 bg-gray-950 flex flex-col p-2'
+              : 'flex-1 min-h-[300px] md:min-h-[360px] mt-4 flex flex-col'
+          }`}
+        >
+          {/* VM Terminal Tabs & Toolbar - always visible */}
+          <div className="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-t-lg overflow-x-auto flex-shrink-0 select-none">
+            {/* Tabs List */}
+            <div className="flex items-center min-w-0 flex-1 overflow-x-auto">
+              {terminalTabs.map((tab) => {
+                const isLeftActive = activeTerminalTabId === tab.id;
+                const isRightActive = isSplitView && splitTerminalTabId === tab.id;
+                const isSelected = isLeftActive || isRightActive;
+
+                return (
+                  <div
+                    key={tab.id}
+                    onClick={() => {
+                      if (isSplitView) {
+                        if (focusedPane === 'right') {
+                          setSplitTerminalTabId(tab.id);
+                        } else {
+                          setActiveTerminalTabId(tab.id);
+                        }
+                      } else {
+                        setActiveTerminalTabId(tab.id);
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer border-r border-gray-700 min-w-0 transition-colors ${
+                      isSelected
+                        ? 'bg-gray-900 text-white border-b-2 border-b-green-500 font-medium'
+                        : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                    }`}
+                    title={tab.vmLabel}
+                  >
+                    <svg className="w-3.5 h-3.5 flex-shrink-0 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="truncate max-w-[120px]">{getTabDisplayTitle(tab, terminalTabs)}</span>
+
+                    {/* Split pane badge indicator */}
+                    {isSplitView && isLeftActive && (
+                      <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-blue-900 text-blue-200">L</span>
+                    )}
+                    {isSplitView && isRightActive && (
+                      <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-green-900 text-green-200">R</span>
+                    )}
+
+                    {/* Duplicate tab button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const vm = vmsWithLiveStatus.find(v => v.id === tab.vmId);
+                        if (vm) handleNewTab(vm);
+                      }}
+                      className="ml-0.5 text-gray-500 hover:text-green-400 p-0.5 rounded hover:bg-gray-700 flex-shrink-0"
+                      title="Buka tab baru untuk VM ini"
+                      aria-label={`Open another tab for ${tab.vmLabel}`}
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    </button>
+
+                    {/* Close tab button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCloseTab(tab.id);
+                      }}
+                      className="text-gray-500 hover:text-red-400 p-0.5 rounded hover:bg-gray-700 flex-shrink-0"
+                      aria-label={`Close terminal for ${tab.vmLabel}`}
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })}
+
+              {/* Add New Tab Button (+) */}
+              <button
+                onClick={handleAddNewTabFromBar}
+                className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-700 transition-colors flex items-center gap-1 border-r border-gray-700 flex-shrink-0"
+                title="Buka tab terminal baru (+)"
+                aria-label="Add new terminal tab"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="hidden sm:inline text-[11px] font-medium">+ Tab</span>
+              </button>
+            </div>
+
+            {/* Right toolbar controls: Split View & Fullscreen */}
+            <div className="flex items-center gap-1.5 px-2 flex-shrink-0">
+              {/* Split view toggle */}
+              <button
+                onClick={handleToggleSplit}
+                className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                  isSplitView
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-gray-400 hover:text-white hover:bg-gray-700'
                 }`}
-                title={tab.vmLabel}
+                title={isSplitView ? 'Kembali ke Single View' : 'Split Terminal Berdampingan (Dual Pane)'}
+                aria-label="Toggle split view"
               >
-                <svg className="w-3.5 h-3.5 flex-shrink-0 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v18m12-18v18M3 3h18v18H3V3z" />
                 </svg>
-                <span className="truncate max-w-[100px]">{tab.vmLabel}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCloseTab(tab.id);
-                  }}
-                  className="ml-1 text-gray-500 hover:text-red-400 flex-shrink-0"
-                  aria-label={`Close terminal for ${tab.vmLabel}`}
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <span className="hidden md:inline">{isSplitView ? 'Dual Pane' : 'Split'}</span>
+              </button>
+
+              {/* Fullscreen toggle */}
+              <button
+                onClick={() => setIsFullscreenTerminal(prev => !prev)}
+                className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                  isFullscreenTerminal
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                title={isFullscreenTerminal ? 'Keluar Fullscreen (Esc)' : 'Fullscreen Terminal (Maximize)'}
+                aria-label="Toggle fullscreen terminal"
+              >
+                {isFullscreenTerminal ? (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
-                </button>
-              </div>
-            ))}
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                  </svg>
+                )}
+                <span className="hidden md:inline">{isFullscreenTerminal ? 'Exit' : 'Full'}</span>
+              </button>
+            </div>
           </div>
+
           {/* Terminal content */}
           <div className="flex-1 min-h-0">
             <TerminalPanel
               tabs={terminalTabs}
               activeTabId={activeTerminalTabId}
               onCloseTab={handleCloseTab}
+              isSplit={isSplitView}
+              splitTabId={splitTerminalTabId}
+              focusedPane={focusedPane}
+              onFocusPane={setFocusedPane}
+              onSelectTabForPane={handleSelectTabForPane}
             />
           </div>
         </div>
