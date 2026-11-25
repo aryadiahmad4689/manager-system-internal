@@ -78,10 +78,12 @@ app.prepare().then(() => {
   io.on('connection', async (socket) => {
     const { registerTerminalHandlers } = await import('./src/lib/socket/terminal-handler');
     const { registerLogHandlers } = await import('./src/lib/socket/log-handler');
+    const { registerOcpHandlers } = await import('./src/lib/socket/ocp-handler');
 
     console.log(`[Socket.IO] Connected: ${socket.id} (user: ${socket.data.username})`);
     registerTerminalHandlers(socket as any);
     registerLogHandlers(socket as any);
+    registerOcpHandlers(socket as any);
 
     socket.on('disconnect', (reason) => {
       console.log(`[Socket.IO] Disconnected: ${socket.id} (reason: ${reason})`);

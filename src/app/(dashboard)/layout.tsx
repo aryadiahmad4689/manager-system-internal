@@ -19,6 +19,7 @@ export default function DashboardLayout({
 
   const isVMPage = pathname === '/';
   const isDatabasePage = pathname === '/databases';
+  const isOcpPage = pathname === '/ocp' || pathname.startsWith('/ocp/');
 
   return (
     <div className="h-screen flex bg-gray-100 dark:bg-gray-900">
@@ -96,6 +97,20 @@ export default function DashboardLayout({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
             </svg>
             {!sidebarCollapsed && <span>Database Management</span>}
+          </Link>
+          <Link
+            href="/ocp"
+            className={`flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              isOcpPage
+                ? 'text-gray-900 dark:text-gray-100 bg-gray-200 dark:bg-gray-700'
+                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700'
+            }`}
+            title="OCP Access"
+          >
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            </svg>
+            {!sidebarCollapsed && <span>OCP Access</span>}
           </Link>
           <button
             onClick={() => setAiSettingsOpen(true)}

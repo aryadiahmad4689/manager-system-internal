@@ -4,6 +4,11 @@ import { decode } from 'next-auth/jwt';
 import { parse as parseCookie } from 'cookie';
 import { registerTerminalHandlers } from './terminal-handler';
 import { registerLogHandlers } from './log-handler';
+import {
+  registerOcpHandlers,
+  type OcpExecOpenPayload,
+  type OcpLogsSubscribePayload,
+} from './ocp-handler';
 
 /**
  * Socket.IO event interfaces for type-safe communication.
@@ -14,6 +19,13 @@ export interface ServerToClientEvents {
   'terminal:close': () => void;
   'log:newEntry': (entry: LogEntry) => void;
   'vm:statusChange': (status: VMStatus) => void;
+  'ocp:exec:ready': () => void;
+  'ocp:exec:output': (data: string) => void;
+  'ocp:exec:error': (error: string) => void;
+  'ocp:exec:close': () => void;
+  'ocp:logs:data': (chunk: string) => void;
+  'ocp:logs:error': (error: string) => void;
+  'ocp:logs:close': () => void;
 }
 
 export interface ClientToServerEvents {
@@ -23,6 +35,12 @@ export interface ClientToServerEvents {
   'terminal:close': () => void;
   'log:subscribe': (vmId: string, project: string, filename: string) => void;
   'log:unsubscribe': () => void;
+  'ocp:exec:open': (payload: OcpExecOpenPayload) => void;
+  'ocp:exec:input': (data: string) => void;
+  'ocp:exec:resize': (cols: number, rows: number) => void;
+  'ocp:exec:close': () => void;
+  'ocp:logs:subscribe': (payload: OcpLogsSubscribePayload) => void;
+  'ocp:logs:unsubscribe': () => void;
 }
 
 export interface LogEntry {
@@ -152,6 +170,9 @@ export function initSocketServer(httpServer: HTTPServer): IOServer {
     // Register log streaming event handlers
     registerLogHandlers(authSocket);
 
+    // Register OCP exec & pod log handlers
+    registerOcpHandlers(authSocket);
+
     socket.on('disconnect', (reason) => {
       console.log(
         `[Socket.IO] Client disconnected: ${authSocket.id} (reason: ${reason})`
@@ -247,6 +268,7 @@ export function setupSocketIO(): IOServer {
 
     registerTerminalHandlers(authSocket);
     registerLogHandlers(authSocket);
+    registerOcpHandlers(authSocket);
 
     socket.on('disconnect', (reason) => {
       console.log(

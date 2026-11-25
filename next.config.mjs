@@ -2,7 +2,7 @@
 const nextConfig = {
   allowedDevOrigins: ['10.168.91.160'],
   experimental: {
-    serverComponentsExternalPackages: ['better-sqlite3', 'bcrypt', 'ssh2'],
+    serverComponentsExternalPackages: ['better-sqlite3', 'bcrypt', 'ssh2', 'ws'],
   },
   webpack: (config, { isServer }) => {
     if (isServer) {
@@ -17,6 +17,7 @@ const nextConfig = {
         'ssh2': 'commonjs ssh2',
         'better-sqlite3': 'commonjs better-sqlite3',
         'bcrypt': 'commonjs bcrypt',
+        'ws': 'commonjs ws',
       });
     }
     return config;

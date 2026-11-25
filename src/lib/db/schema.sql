@@ -81,3 +81,24 @@ CREATE TABLE IF NOT EXISTS query_history (
 -- Index for efficient history lookup and cleanup
 CREATE INDEX IF NOT EXISTS idx_query_history_connection 
   ON query_history(connection_id, executed_at DESC);
+
+-- OpenShift (OCP) Clusters
+CREATE TABLE IF NOT EXISTS ocp_clusters (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  label TEXT NOT NULL,
+  console_url TEXT NOT NULL,
+  api_url TEXT NOT NULL,
+  auth_type TEXT NOT NULL CHECK(auth_type IN ('oauth_password', 'token')),
+  username TEXT,
+  encrypted_secret TEXT NOT NULL,
+  encryption_iv TEXT NOT NULL,
+  encryption_auth_tag TEXT NOT NULL,
+  encrypted_token TEXT,
+  token_iv TEXT,
+  token_auth_tag TEXT,
+  token_expires_at DATETIME,
+  default_namespace TEXT,
+  insecure_tls INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
