@@ -102,3 +102,28 @@ CREATE TABLE IF NOT EXISTS ocp_clusters (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Security & Code Quality Connections (SonarQube, Checkmarx SAST, Checkmarx SCA)
+CREATE TABLE IF NOT EXISTS security_connections (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  provider TEXT NOT NULL CHECK(provider IN ('sonarqube', 'cxsast', 'cxsca')),
+  label TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  auth_type TEXT NOT NULL CHECK(auth_type IN ('password', 'token')),
+  tenant_account TEXT,
+  username TEXT,
+  client_id TEXT,
+  encrypted_client_secret TEXT,
+  client_secret_iv TEXT,
+  client_secret_auth_tag TEXT,
+  encrypted_secret TEXT NOT NULL,
+  encryption_iv TEXT NOT NULL,
+  encryption_auth_tag TEXT NOT NULL,
+  encrypted_token TEXT,
+  token_iv TEXT,
+  token_auth_tag TEXT,
+  token_expires_at DATETIME,
+  insecure_tls INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
